@@ -1,5 +1,6 @@
 import logging
 import os
+import io
 from datetime import datetime
 from contextlib import asynccontextmanager
 
@@ -18,34 +19,46 @@ from telegram.ext import (
 from chart import CoreAstrologyEngine
 from scoring import RulesEngine
 from interpreter import AstrologicalInterpreter
+from drawer import AstrologyChartDrawer
 
+# إعداد السجلات (Logging)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# تعريف مراحل المحادثة (Conversation States)
 YEAR, MONTH, DAY, KNOWS_TIME, TIME, LOCATION = range(6)
 
+# تهيئة المحركات الأساسية
 engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
+drawer = AstrologyChartDrawer()
 
+# التوكن والمتغيرات الخاصة بالـ Webhook
 TOKEN = "7523578617:AAHECJgxEx-9FB9GN2lWoyJJHrunbzH-BwU"
 WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
+# بناء تطبيق التليجرام عالمياً ليتمكن FastAPI من قراءته
 telegram_app = Application.builder().token(TOKEN).build()
 
+# دالة مخصصة لإعداد الـ Webhook عند إقلاع السيرفر وتفكيكه عند الإغلاق
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # عند الإقلاع
     await telegram_app.initialize()
     await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
     logger.info(f"✅ Webhook successfully set to: {WEBHOOK_URL}")
     await telegram_app.start()
     yield
+    # عند الإغلاق
     await telegram_app.stop()
     await telegram_app.shutdown()
 
+# إنشاء كائن الـ ASGI الأساسي باسم "app" الذي يبحث عنه السيرفر
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/webhook")
 async def webhook_handler(request: Request):
+    """استقبال التحديثات من تليجرام وتمريرها للمحرك"""
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
@@ -55,12 +68,13 @@ async def webhook_handler(request: Request):
 async def root_handler():
     return {"status": "healthy", "bot": "Astrology Bot is running via Webhook"}
 
-# --- منطق المحادثة ---
+
+# --- منطق المحادثة الفلكية والمراحل ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "🔮 **مرحباً بك في نظام التحليل الفلكي الشامل**\n\n"
-        "سنقوم بإعداد خريطتك الشخصية العميقة واستخراج ملامحك الفلكية بدقة.\n"
+        "سنقوم بإعداد خريطتك الشخصية العميقة واستخرج ملامحك الفلكية بدقة.\n"
         "ابدأ بإرسال **سنة ميلادك** بالأرقام (مثال: `1998`):"
     )
     return YEAR
@@ -80,7 +94,7 @@ async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     keyboard = [
         [InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="knows_true")],
-        [InlineKeyboardButton("❌ لا، غير معروف"، callback_data="knows_false")]
+        [InlineKeyboardButton("❌ لا، غير معروف", callback_data="knows_false")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🕒 هل تعرف **وقت ولادتك الدقيق** (الساعة والدقيقة)؟", reply_markup=reply_markup)
@@ -133,24 +147,41 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("⏳ جاري استخراج البيانات وحساب المواقع الفلكية من المصادر الرسمية...")
 
     try:
+        # 1. حساب الخريطة الأساسية من محرك السويس إيفيمريس
         chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
         
-        # استخراج النقاط
+        # 2. استخراج وفحص النقاط من محرك القواعد
         facts = [] 
         score_data = RulesEngine.evaluate(facts)
         total_score = score_data.total_score 
 
+        # حفظ البيانات والسكور منفصلين داخل جلسة المستخدم الحالية
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
         is_unknown = context.user_data.get('unknown_time', False)
-        summary_msg = interpreter.get_minimal_summary(chart_data, unknown_time=is_unknown)
         
-        # 🚧 إذا كان السكور صفراً، نستبدله بنص ذكي تفادياً لشعور المستخدم بالعطل
+        # 3. معالجة وتوليد الرسم الهندسي الاحترافي SVG وإرساله كوثيقة فورية
+        try:
+            chart_svg_string = drawer.generate_chart_svg(chart_data)
+            svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
+            svg_bytes.name = "natal_chart.svg"
+            
+            await update.message.reply_document(
+                document=svg_bytes,
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة Pixel-Perfect اعتماداً على مواقع الأجرام والأوتاد لحظة ميلادك البكر.",
+                parse_mode="Markdown"
+            )
+        except Exception as draw_err:
+            logger.error(f"Error during chart drawing generation: {draw_err}", exc_info=True)
+            # نستمر في إرسال النصوص والتحليلات حتى لو فشل الرسم منعاً لتوقف التجربة الكاملة
+
+        # 4. توليد التقرير المختصر واستبدال تاجات السكور
+        summary_msg = interpreter.get_minimal_summary(chart_data, unknown_time=is_unknown)
         score_display = "🚧 قيد التطوير والحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
-        # 🚀 بناء أزرار تفاعلية تشويقية تجذب فضول المستخدم العادي
+        # 5. بناء مصفوفة الأزرار الجذابة التشويقية الجديدة
         keyboard = [
             [InlineKeyboardButton("🧠 شخصيتك الحقيقية", callback_data="menu_personal"), InlineKeyboardButton("❤️ الحب والزواج", callback_data="menu_love")],
             [InlineKeyboardButton("💼 المهنة المناسبة", callback_data="menu_career"), InlineKeyboardButton("💰 المال والثروة", callback_data="menu_money")],
@@ -200,12 +231,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(summary_msg, reply_markup=reply_markup, parse_mode="Markdown")
         
     else:
-        await query.message.reply_text("🚧 هذا القسم من تحليلك يتم إعداده وتوليده الآن وسيكون متاحاً في التحديث القادم!")
+        await query.message.reply_text("🚧 هذا القسم من تحليلك الفلكي يتم توليده ومطابقته برمجياً الآن وسيكون متاحاً في التحديث القادم!")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 تم إلغاء العملية. يمكنك البدء من جديد بإرسال /start")
     return ConversationHandler.END
 
+# ربط المعالجات والمستمعات بـ telegram_app
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
     states={
