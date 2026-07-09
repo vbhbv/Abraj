@@ -12,13 +12,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# تهيئة المحركات
+# تهيئة المحركات تلقائياً من مجلد الجذر
 engine = CoreAstrologyEngine()
 time_service = BirthDataService()
 
 @app.get("/")
 def health_check():
-    # جلب المتغيرات من لوحة تحكم الاستضافة للتأكد من قراءتها
+    # جلب المتغيرات من لوحة تحكم الاستضافة للتأكد من قراءتها واختبار الحالة
     db_url = os.getenv("DATABASE_URL")
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     
@@ -50,7 +50,6 @@ def get_scoring(chart: ChartResult):
 
 if __name__ == "__main__":
     import uvicorn
-    # تشغيل السيرفر على البورت المعين من منصة السحاب أو 8000 تلقائياً
+    # جلب المنفذ ديناميكياً من السيرفر (Railway يعين المنفذ تلقائياً عبر متغير PORT)
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
-  
