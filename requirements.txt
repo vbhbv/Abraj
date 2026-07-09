@@ -1,8 +1,8 @@
-Fastapi>=0.100.0
+fastapi>=0.100.0
 uvicorn>=0.22.0
 pydantic>=2.0
 timezonefinder>=6.2.0
 pyswisseph>=2.10.0.post1
 python-telegram-bot>=20.0
 httpx>=0.24.0
-cairosvg
+Pillow>=10.3.0
