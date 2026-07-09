@@ -203,7 +203,7 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             logger.error(f"Error during chart drawing: {draw_err}", exc_info=True)
             await update.message.reply_text("⚠️ تم حساب بياناتك بنجاح ولكن تعذر توليد الصورة، جاري إرسال التقرير النصي...")
 
-        # 4. حل مشكلة دالة التفسير النصي للمخدم للمستخدم
+        # 4. حل مشكلة دالة التفسير النصي للمستخدم
         summary_msg = interpreter.get_minimal_summary(chart_data)
         score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
@@ -253,57 +253,89 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ العودة للقائمة الرئيسية", callback_data="menu_back")]])
 
-    # استدعاء التحليلات الفردية ديناميكياً من محرك التفسير حسب الزر المختار
+    # استخراج التقرير الشامل لتفكيكه وتصفيته بحسب كواكب كل قسم معني
+    full_report = interpreter.get_detailed_report(chart_data)
+    
+    def extract_planets_info(report_text, target_planets):
+        sections = report_text.split("---")
+        extracted = []
+        for section in sections:
+            if any(planet in section for planet in target_planets):
+                extracted.append(section.strip())
+        if extracted:
+            return "\n\n---\n\n".join(extracted)
+        return "⚠️ تفاصيل هذا القسم مدمجة في تقرير خريطتك الكاملة."
+
     try:
+        # 1. زر الشخصية الحقيقية (يسحب الشمس والقمر والطالع)
         if query.data == "menu_personal":
-            if hasattr(interpreter, 'get_personal_analysis'):
-                report = interpreter.get_personal_analysis(chart_data)
-            else:
-                report = "🧠 **تحليل الشخصية والهوية حية**\n\n" + interpreter.get_detailed_report(chart_data).split('\n\n')[0]
+            asc_sign = getattr(chart_data, 'ascendant', 'غير معروف')
+            planets_data = extract_planets_info(full_report, ["الشمس", "القمر"])
+            report = (
+                f"🧠 **تحليل شخصيتك الحقيقية والفريدة**\n\n"
+                f"• **البرج الصاعد (الطالع):** {asc_sign}\n\n"
+                f"**المواقع والمؤشرات النفسية لجوهر شخصيتك الحالية:**\n\n"
+                f"{planets_data}"
+            )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
+        # 2. زر الحب والزواج (يسحب الزهرة ونبتون والبيت 7)
         elif query.data == "menu_love":
-            if hasattr(interpreter, 'get_love_analysis'):
-                report = interpreter.get_love_analysis(chart_data)
-            else:
-                report = "❤️ **العلاقات والعاطفة بالتفصيل وفقاً لمواقع كواكبك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            planets_data = extract_planets_info(full_report, ["الزهرة", "البيت 7", "نبتون"])
+            report = (
+                "❤️ **تحليل العلاقات، الحب والشراكات العاطفية**\n\n"
+                "إليك الجوانب الفلكية الحاكمة لطاقتك العاطفية والارتباط في خريطتك:\n\n"
+                f"{planets_data}"
+            )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
+        # 3. زر المهنة المناسبة (يسحب المريخ وعطارد والبيت 6 أو 11)
         elif query.data == "menu_career":
-            if hasattr(interpreter, 'get_career_analysis'):
-                report = interpreter.get_career_analysis(chart_data)
-            else:
-                report = "💼 **المسار المهني والعملي الأكثر توافقاً مع خريطتك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            planets_data = extract_planets_info(full_report, ["المريخ", "عطارد", "البيت 6", "البيت 11"])
+            report = (
+                "💼 **المسار المهني، بيئة العمل والإنتاجية الاحترافية**\n\n"
+                "الكواكب المسؤولة عن مجالات نجاحك، وتعاملك مع المسؤوليات والزملاء:\n\n"
+                f"{planets_data}"
+            )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
+        # 4. زر المال والثروة (يسحب زحل والمشتري والبيت 2)
         elif query.data == "menu_money":
-            if hasattr(interpreter, 'get_money_analysis'):
-                report = interpreter.get_money_analysis(chart_data)
-            else:
-                report = "💰 **التحليل المالي ومصادر الوفرة والدخل الذاتي:**\n\n" + interpreter.get_detailed_report(chart_data)
+            planets_data = extract_planets_info(full_report, ["زحل", "المشتري", "البيت 2"])
+            report = (
+                "💰 **التحليل المالي، إدارة الثروة وفرص الوفرة**\n\n"
+                "مواقع الكواكب والبيوت الحاكمة لوضعك المالي ومجهودك الشخصي لإحراز المكتسبات:\n\n"
+                f"{planets_data}"
+            )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
+        # 5. زر نقاط القوة والضعف (يسحب تشيرون وليليث وعطارد)
         elif query.data == "menu_features":
-            if hasattr(interpreter, 'get_features_analysis'):
-                report = interpreter.get_features_analysis(chart_data)
-            else:
-                report = "🌟 **نقاط القوة، الضعف والتحديات الناتجة عن اتصالات كواكبك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            planets_data = extract_planets_info(full_report, ["تشيرون", "ليليث", "عطارد"])
+            report = (
+                "🌟 **تحليل نقاط القوة، التحديات والمخاوف النفسية الباطنية**\n\n"
+                "يكشف التوزيع الفلكي عن مواضع قوتك العقلية وجراحك الكرمية العميقة:\n\n"
+                f"{planets_data}"
+            )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
+        # 6. زر التوقعات (يسحب أورانوس وبلوتو والعقد الفلكية)
         elif query.data == "menu_predict":
-            if hasattr(interpreter, 'get_predictions_analysis'):
-                report = interpreter.get_predictions_analysis(chart_data)
-            else:
-                report = "🔮 **التوقعات الزمنية والعبور الفلكي القادم المؤثر عليك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            planets_data = extract_planets_info(full_report, ["أورانوس", "بلوتو", "العقدة الشمالية", "العقدة الجنوبية"])
+            report = (
+                "🔮 **مؤشرات التغيير، التوقعات والتحولات الكرمية**\n\n"
+                "تأثير أجرام التحول الجذري ومسارات التطور الروحي في خريطتك الحالية:\n\n"
+                f"{planets_data}"
+            )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
+        # 7. زر الخريطة الكاملة للمحترفين
         elif query.data == "menu_full_chart":
-            detailed_report = interpreter.get_detailed_report(chart_data)
-            await query.edit_message_text(detailed_report, reply_markup=back_markup, parse_mode="Markdown")
+            await query.edit_message_text(full_report, reply_markup=back_markup, parse_mode="Markdown")
             
     except Exception as exc:
         logger.error(f"Error handling menu click {query.data}: {exc}")
-        await query.message.reply_text("⚠️ تعذر استخراج هذا القسم ديناميكياً، يرجى استخدام خيار الخريطة الكاملة.")
+        await query.message.reply_text("⚠️ عذراً، جاري تحديث الفلترة الفلكية، يمكنك مراجعة التقرير الشامل مباشرة.")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 تم إلغاء العملية. يمكنك البدء من جديد بإرسال /start")
