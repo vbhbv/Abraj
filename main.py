@@ -64,14 +64,12 @@ class FlexibleChartAdapter:
         for aspect in raw_aspects:
             class AspectAdapter:
                 def __init__(self, asp):
-                    # فحص واكتشاف اسم الحقل المستخدم في كائن السويس إيفيمريس لديك للجرام الأول والثاني
                     self.p1 = getattr(asp, 'p1', getattr(asp, 'planet1', getattr(asp, 'p1_name', None)))
                     self.p2 = getattr(asp, 'p2', getattr(asp, 'planet2', getattr(asp, 'p2_name', None)))
                     self.type = getattr(asp, 'type', getattr(asp, 'aspect_type', 'Conjunction'))
                     self.orb = getattr(asp, 'orb', 0.0)
             
             adapted_asp = AspectAdapter(aspect)
-            # لا نضيف الاتصال إلا إذا نجح المحرك في قراءة أسماء الكواكب التابعة له
             if adapted_asp.p1 and adapted_asp.p2:
                 self.aspects.append(adapted_asp)
 
@@ -188,20 +186,43 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. معالجة وتوليد الرسم الهندسي الاحترافي SVG وإرساله كوثيقة فورية
+        # 3. معالجة وتوليد الرسم الهندسي وتحويله إلى PNG مرئية ومباشرة للمستخدم
         try:
+            from svglib.svglib import svg2rlg
+            from reportlab.graphics import renderPM
+
             adapted_chart = FlexibleChartAdapter(chart_data)
             chart_svg_string = drawer.generate_chart_svg(adapted_chart)
-            svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
-            svg_bytes.name = "natal_chart.svg"
             
-            await update.message.reply_document(
-                document=svg_bytes,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك.",
+            # قراءة الـ SVG من الذاكرة وتحويله إلى كائن رسومي
+            svg_io = io.BytesIO(chart_svg_string.encode('utf-8'))
+            drawing = svg2rlg(svg_io)
+            
+            # تحويل الكائن الرسومي إلى بايتات PNG داخل الذاكرة
+            png_io = io.BytesIO()
+            renderPM.drawToFile(drawing, png_io, fmt="PNG")
+            png_io.seek(0)
+            png_io.name = "natal_chart.png"
+            
+            # إرسال الخريطة الفلكية كصورة مرئية فورية (reply_photo)
+            await update.message.reply_photo(
+                photo=png_io,
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك البكر.",
                 parse_mode="Markdown"
             )
         except Exception as draw_err:
-            logger.error(f"Error during chart drawing generation: {draw_err}", exc_info=True)
+            logger.error(f"Error during chart drawing conversion to PNG: {draw_err}", exc_info=True)
+            # حل احتياطي آمن: في حال فشل التحويل لأي سبب، نرسل ملف SVG الأصلي كوثيقة
+            try:
+                svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
+                svg_bytes.name = "natal_chart.svg"
+                await update.message.reply_document(
+                    document=svg_bytes,
+                    caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\n[ملف متجهي عالي الجودة]",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
 
         # 4. حل مشكلة دالة التفسير: استدعاء الدالة وحذف البارامتر غير المدعوم
         summary_msg = interpreter.get_minimal_summary(chart_data)
