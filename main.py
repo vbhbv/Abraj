@@ -1,7 +1,6 @@
 import logging
 import os
 import io
-import cairosvg
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, Any
@@ -188,14 +187,14 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. توليد الرسم ومعالجته الجذري بـ CairoSVG لمنع مشاكل العرض تماماً
+        # 3. توليد الرسم بصيغة بايتات PNG حقيقية مباشرة عبر Pillow لمنع مشاكل العرض تماماً
         try:
             adapted_chart = FlexibleChartAdapter(chart_data)
-            chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             
-            # التحويل الحقيقي إلى بايتات صورة PNG آمنة
-            png_bytes = cairosvg.svg2png(bytestring=chart_svg_string.encode('utf-8'))
-            img_buffer = io.BytesIO(png_bytes)
+            # استدعاء دالة الرسم المباشر لـ PNG (من التحديث الجديد لملف drawer.py)
+            img_bytes_data = drawer.generate_chart_png(adapted_chart)
+            
+            img_buffer = io.BytesIO(img_bytes_data)
             img_buffer.name = "natal_chart.png"
             
             # إرسال الخريطة كصورة حقيقية لتظهر فوراً على أندرويد وآيفون
