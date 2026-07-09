@@ -5,3 +5,5 @@ timezonefinder>=6.2.0
 pyswisseph>=2.10.0.post1
 python-telegram-bot>=20.0
 httpx>=0.24.0
+svglib==1.5.1
+reportlab==4.1.0
