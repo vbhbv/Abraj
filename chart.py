@@ -1,11 +1,15 @@
 import swisseph as swe
 from datetime import datetime
+import os
 from models import ChartResult, PlanetData, AspectData
 
 class CoreAstrologyEngine:
     def __init__(self, ephe_path="."):
-        # تعطيل البحث عن الملفات الخارجية لاعتماد الحساب الرياضي المدمج
-        # swe.set_ephe_path(ephe_path)
+        # حل مشكلة مسارات النظام: جلب المسار الحقيقي الكامل لجذر مشروعك على سيرفر Railway
+        absolute_path = os.path.abspath(ephe_path)
+        
+        # إجبار المكتبة على قراءة هذا المسار تحديداً وإلغاء مسارات Linux الافتراضية
+        swe.set_ephe_path(absolute_path)
         
         self.PLANETS = {
             'Sun': swe.SUN, 'Moon': swe.MOON, 'Mercury': swe.MERCURY,
@@ -36,12 +40,12 @@ class CoreAstrologyEngine:
         jd = self._to_julian_day(dt_utc)
         cusps, ascmc = swe.houses(jd, lat, lon, b'P')
         
-        # الرقم 4 يعبر برمجياً عن وضع (Moshier) للحساب الداخلي الفائق دون ملفات خارجية
+        # نستخدم الحساب الرياضي المدمج (4) لحماية إضافية
         FLAG_MOSHIER = 4
         
         planets_computed = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd, swe_id, FLAG_MOSHIER)  # تم تمرير القيمة الرقمية هنا
+            res, _ = swe.calc_ut(jd, swe_id, FLAG_MOSHIER)
             long = res[0]
             planets_computed[name] = PlanetData(
                 name=name, longitude=long, sign=self.SIGNS[int(long / 30)],
@@ -71,7 +75,7 @@ class CoreAstrologyEngine:
         jd_future = jd_current + (1.0 / 24.0)
         planets_future = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd_future, swe_id, 4)  # تم استخدام القيمة 4 هنا أيضاً
+            res, _ = swe.calc_ut(jd_future, swe_id, 4)
             planets_future[name] = res[0]
         planets_future['SouthNode'] = (planets_future['NorthNode'] + 180.0) % 360.0
 
