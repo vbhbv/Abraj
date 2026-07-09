@@ -10,7 +10,7 @@ class CoreAstrologyEngine:
             'Sun': swe.SUN, 'Moon': swe.MOON, 'Mercury': swe.MERCURY,
             'Venus': swe.VENUS, 'Mars': swe.MARS, 'Jupiter': swe.JUPITER,
             'Saturn': swe.SATURN, 'Uranus': swe.URANUS, 'Neptune': swe.NEPTUNE, 'Pluto': swe.PLUTO,
-            'Chiron': swe.CHIRON, 'NorthNode': swe.MEAN_NODE, 'Lilith': swe.MEAN_APOGEE
+            'Chiron': swe.CHIRON, 'NorthNode': swe.MEAN_NODE, 'Lilith': swe.MEAN_APOG  # التعديل الحرفي هنا
         }
         self.SIGNS = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
 
