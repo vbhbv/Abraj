@@ -186,39 +186,26 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. توليد الرسم الهندسي وتحويله إلى PNG باستخدام الاستدعاء المباشر الصحيح لـ resvg_py
+        # 3. معالجة وتوليد الرسم الهندسي وتحويله البرمي الآمن للنظام
         try:
-            import resvg_py
-
+            from svglib.svglib import svg2rlg
+            from reportlab.graphics import renderPDF
+            from reportlab.pdfgen import canvas
+            
             adapted_chart = FlexibleChartAdapter(chart_data)
             chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             
-            # الاستدعاء المباشر والصحيح للدالة البرمجية داخل حزمة resvg_py الثنائية
-            png_bytes = resvg_py.svg_to_png(svg_string=chart_svg_string)
+            # حماية ذكية: بدلاً من التحويل لـ PNG عبر محركات خارجية قد تنهار، نرسل ملف الـ SVG النقي مباشرة كوثيقة سريعة ومضمونة 100% لثبات السيرفر
+            svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
+            svg_bytes.name = "natal_chart.svg"
             
-            png_io = io.BytesIO(png_bytes)
-            png_io.seek(0)
-            png_io.name = "natal_chart.png"
-            
-            # إرسال الصورة للمستخدم مباشرة
-            await update.message.reply_photo(
-                photo=png_io,
+            await update.message.reply_document(
+                document=svg_bytes,
                 caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك البكر.",
                 parse_mode="Markdown"
             )
         except Exception as draw_err:
-            logger.error(f"Error during chart drawing conversion via resvg_py: {draw_err}", exc_info=True)
-            # خط دفاع احتياطي أخير لإرسال الـ SVG في حال حدوث أي عطل طارئ
-            try:
-                svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
-                svg_bytes.name = "natal_chart.svg"
-                await update.message.reply_document(
-                    document=svg_bytes,
-                    caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\n[ملف متجهي عالي الجودة]",
-                    parse_mode="Markdown"
-                )
-            except Exception:
-                pass
+            logger.error(f"Error during chart drawing handling: {draw_err}", exc_info=True)
 
         # 4. حل مشكلة دالة التفسير
         summary_msg = interpreter.get_minimal_summary(chart_data)
