@@ -5,7 +5,7 @@ from models import ChartResult, PlanetData, AspectData
 
 class CoreAstrologyEngine:
     def __init__(self, ephe_path="."):
-        # تحديد المسار الحقيقي الكامل لجذر المشروع لقراءة ملف seas_18.se1 بنجاح
+        # تحديد المسار الحقيقي الكامل لجذر المشروع لقراءة الملفات الفلكية
         absolute_path = os.path.abspath(ephe_path)
         swe.set_ephe_path(absolute_path)
         
@@ -21,7 +21,8 @@ class CoreAstrologyEngine:
         return swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute / 60.0)
 
     def _determine_house(self, lon: float, cusps) -> int:
-        actual_cusps = list(cusps[1:]) if len(cusps) == 13 else list(cusps)
+        # تعامل آمن مع مصفوفة البيوت
+        actual_cusps = list(cusps)
         for i in range(12):
             next_idx = (i + 1) % 12
             c_start = actual_cusps[i]
@@ -38,9 +39,16 @@ class CoreAstrologyEngine:
         jd = self._to_julian_day(dt_utc)
         cusps, ascmc = swe.houses(jd, lat, lon, b'P')
         
+        # تجهيز قاموس البيوت بشكل آمن لتجنب IndexError
+        house_cusps = {}
+        for i in range(1, 13):
+            try:
+                house_cusps[i] = float(cusps[i-1])
+            except IndexError:
+                house_cusps[i] = 0.0
+
         planets_computed = {}
         for name, swe_id in self.PLANETS.items():
-            # تم إزالة وضع Moshier ليقوم المحرك بالقراءة من الملف المرفوع مباشرة وبأعلى دقة
             res, _ = swe.calc_ut(jd, swe_id)
             long = res[0]
             planets_computed[name] = PlanetData(
@@ -59,8 +67,11 @@ class CoreAstrologyEngine:
         aspects_computed = self._compute_aspects_by_time_delta(jd, planets_computed)
 
         return ChartResult(
-            ascendant=self.SIGNS[int(ascmc[0] / 30)], midheaven=self.SIGNS[int(ascmc[1] / 30)],
-            planets=planets_computed, aspects=aspects_computed, houses={i: float(cusps[i]) for i in range(1, 13)}
+            ascendant=self.SIGNS[int(ascmc[0] / 30)], 
+            midheaven=self.SIGNS[int(ascmc[1] / 30)],
+            planets=planets_computed, 
+            aspects=aspects_computed, 
+            houses=house_cusps
         )
 
     def _compute_aspects_by_time_delta(self, jd_current: float, planets_current: dict) -> list:
@@ -71,7 +82,6 @@ class CoreAstrologyEngine:
         jd_future = jd_current + (1.0 / 24.0)
         planets_future = {}
         for name, swe_id in self.PLANETS.items():
-            # تم تنظيف دالة الحساب المستقبلية أيضاً لتقرأ من ملف الجداول الفلكية
             res, _ = swe.calc_ut(jd_future, swe_id)
             planets_future[name] = res[0]
         planets_future['SouthNode'] = (planets_future['NorthNode'] + 180.0) % 360.0
