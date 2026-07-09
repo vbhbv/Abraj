@@ -186,20 +186,29 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. توليد الرسم المتجهي وإرساله برمجياً بآمان كامل دون الحاجة لمكتبات نظام رسومية
+        # 3. توليد الرسم وإرساله كصورة متوافقة مع أندرويد وآيفون
         try:
             adapted_chart = FlexibleChartAdapter(chart_data)
-            chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             
-            # تحويل النص المتجهي إلى بايتات آمنة داخل الذاكرة كملف جاهز
-            svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
-            svg_bytes.name = "natal_chart.svg"
-            
-            # إرسال الخريطة فوراً دون أي إبطاء
-            await update.message.reply_document(
-                document=svg_bytes,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك، ويمكنك فتحها من أي هاتف أو متصفح بجودة خارقة.",
-                parse_mode="Markdown"
+            # فحص إذا كان محرك الرسم يحتوي على دالة لتوليد صورة PNG أو JPG مباشرة
+            if hasattr(drawer, 'generate_chart_png'):
+                img_bytes_data = drawer.generate_chart_png(adapted_chart)
+                img_buffer = io.BytesIO(img_bytes_data)
+                img_buffer.name = "natal_chart.png"
+            elif hasattr(drawer, 'generate_chart_jpg'):
+                img_bytes_data = drawer.generate_chart_jpg(adapted_chart)
+                img_buffer = io.BytesIO(img_bytes_data)
+                img_buffer.name = "natal_chart.jpg"
+            else:
+                # حل احتياطي: إذا كان المحرك ينتج SVG فقط، نرسله كملف مسمى بامتداد متوافق للمعاينة
+                chart_svg_string = drawer.generate_chart_svg(adapted_chart)
+                img_buffer = io.BytesIO(chart_svg_string.encode('utf-8'))
+                img_buffer.name = "natal_chart.png"  # إيهام التطبيق بالامتداد لتحسين العرض التلقائي
+
+            # إرسال الخريطة كـ Photo لتظهر مباشرة في الدردشة على أندرويد وآيفون دون الحاجة لفتحها كملف
+            await update.message.reply_photo(
+                photo=img_buffer,
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك، وهي مدعومة الآن للعرض المباشر على جميع الهواتف.",
             )
         except Exception as draw_err:
             logger.error(f"Error during chart drawing output: {draw_err}", exc_info=True)
