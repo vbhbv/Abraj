@@ -1,7 +1,6 @@
 import swisseph as swe
 from datetime import datetime
 from models import ChartResult, PlanetData, AspectData
-from utils import is_between_arc
 
 class CoreAstrologyEngine:
     def __init__(self, ephe_path="./ephe"):
@@ -10,18 +9,35 @@ class CoreAstrologyEngine:
             'Sun': swe.SUN, 'Moon': swe.MOON, 'Mercury': swe.MERCURY,
             'Venus': swe.VENUS, 'Mars': swe.MARS, 'Jupiter': swe.JUPITER,
             'Saturn': swe.SATURN, 'Uranus': swe.URANUS, 'Neptune': swe.NEPTUNE, 'Pluto': swe.PLUTO,
-            'Chiron': swe.CHIRON, 'NorthNode': swe.MEAN_NODE, 'Lilith': swe.MEAN_APOG  # التعديل الحرفي هنا
+            'Chiron': swe.CHIRON, 'NorthNode': swe.MEAN_NODE, 'Lilith': swe.MEAN_APOG
         }
         self.SIGNS = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
 
     def _to_julian_day(self, dt: datetime) -> float:
         return swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute / 60.0)
 
-    def _determine_house(self, lon: float, cusps: list) -> int:
-        for i in range(1, 12):
-            if is_between_arc(cusps[i], cusps[i+1], lon):
-                return i
-        return 12
+    def _determine_house(self, lon: float, cusps) -> int:
+        """
+        تحديد البيت الفلكي للكوكب بشكل محمي ودائري يتفادى مشاكل عبور نقطة الصفر الفلكية.
+        """
+        # مكتبة swisseph تعيد المصفوفة بطول 13 حيث العنصر index 0 مهمل والبيوت الفلكية من 1 لـ 12.
+        # سنقوم بتحويلها لقائمة صافية مكونة من 12 بيتاً لتسهيل الحساب الدائري.
+        actual_cusps = list(cusps[1:]) if len(cusps) == 13 else list(cusps)
+            
+        for i in range(12):
+            next_idx = (i + 1) % 12  # لربط البيت 12 بالبيت 1 دائرياً
+            c_start = actual_cusps[i]
+            c_end = actual_cusps[next_idx]
+            
+            # التحقق من وقوع خط الطول (lon) داخل حدود البيت فلكياً ودائرياً
+            if c_start <= c_end:
+                if c_start <= lon < c_end:
+                    return i + 1
+            else:  # حالة قطع البيت لنقطة الصفر (360 / 0 درجة)
+                if lon >= c_start or lon < c_end:
+                    return i + 1
+                    
+        return 12  # خيار أمان افتراضي
 
     def compute_natal_chart(self, dt_utc: datetime, lat: float, lon: float) -> ChartResult:
         jd = self._to_julian_day(dt_utc)
