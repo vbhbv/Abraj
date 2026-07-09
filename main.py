@@ -3,6 +3,7 @@ import os
 import io
 from datetime import datetime
 from contextlib import asynccontextmanager
+from typing import Dict, Any
 
 from fastapi import FastAPI, Request, Response
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -39,6 +40,29 @@ WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
 # بناء تطبيق التليجرام عالمياً ليتمكن FastAPI من قراءته
 telegram_app = Application.builder().token(TOKEN).build()
+
+# كائن وسيط مرن لتخطي قيود Pydantic الصارمة في التعديل والحقن الديناميكي
+class FlexibleChartAdapter:
+    def __init__(self, raw_chart: Any):
+        self.ascendant = getattr(raw_chart, 'ascendant', 'Aries')
+        # جلب الدرجات الحقيقية إن وجدت، وإلا إعطاء قيم افتراضية آمنة للرسم
+        self.ascendant_degree = getattr(raw_chart, 'ascendant_degree', 0.0)
+        self.midheaven_degree = getattr(raw_chart, 'midheaven_degree', 270.0)
+        
+        # نسخ البيوت
+        self.houses = getattr(raw_chart, 'houses', {})
+        # نسخ الاتصالات
+        self.aspects = getattr(raw_chart, 'aspects', [])
+        
+        # نسخ وفك تشابك الكواكب وتحويل الحقول ديناميكياً
+        self.planets = {}
+        raw_planets = getattr(raw_chart, 'planets', {})
+        for p_name, p_data in raw_planets.items():
+            # إنشاء كائن كوكبي مرن يقبل الاستدعاء عبر .longitude
+            class PlanetAdapter:
+                def __init__(self, data):
+                    self.longitude = getattr(data, 'longitude', getattr(data, 'abs_degree', getattr(data, 'degree', 0.0)))
+            self.planets[p_name] = PlanetAdapter(p_data)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -155,19 +179,10 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         is_unknown = context.user_data.get('unknown_time', False)
         
-        # 🛡️ طبقة الحماية والتوافق السريع والمطلق لمنع انهيار المحرك
-        if not hasattr(chart_data, 'ascendant_degree'):
-            chart_data.ascendant_degree = 0.0 
-        if not hasattr(chart_data, 'midheaven_degree'):
-            chart_data.midheaven_degree = 270.0
-
-        for p_name, p_data in chart_data.planets.items():
-            if not hasattr(p_data, 'longitude'):
-                p_data.longitude = getattr(p_data, 'abs_degree', getattr(p_data, 'degree', 0.0))
-
-        # 3. معالجة وتوليد الرسم الهندسي الاحترافي SVG وإرساله كوثيقة فورية
+        # 3. تغليف الكائن بـ Adapter مرن لتجنب قيود Pydantic وتمريره لـ drawer بأمان
         try:
-            chart_svg_string = drawer.generate_chart_svg(chart_data)
+            adapted_chart = FlexibleChartAdapter(chart_data)
+            chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
             svg_bytes.name = "natal_chart.svg"
             
