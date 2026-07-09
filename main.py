@@ -41,28 +41,39 @@ WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 # بناء تطبيق التليجرام عالمياً ليتمكن FastAPI من قراءته
 telegram_app = Application.builder().token(TOKEN).build()
 
-# كائن وسيط مرن لتخطي قيود Pydantic الصارمة في التعديل والحقن الديناميكي
+# كائن وسيط مرن لتخطي قيود Pydantic وتوحيد أسماء الحقول لملف الرسم
 class FlexibleChartAdapter:
     def __init__(self, raw_chart: Any):
         self.ascendant = getattr(raw_chart, 'ascendant', 'Aries')
-        # جلب الدرجات الحقيقية إن وجدت، وإلا إعطاء قيم افتراضية آمنة للرسم
         self.ascendant_degree = getattr(raw_chart, 'ascendant_degree', 0.0)
         self.midheaven_degree = getattr(raw_chart, 'midheaven_degree', 270.0)
-        
-        # نسخ البيوت
         self.houses = getattr(raw_chart, 'houses', {})
-        # نسخ الاتصالات
-        self.aspects = getattr(raw_chart, 'aspects', [])
         
-        # نسخ وفك تشابك الكواكب وتحويل الحقول ديناميكياً
+        # نسخ وتكييف الكواكب
         self.planets = {}
         raw_planets = getattr(raw_chart, 'planets', {})
         for p_name, p_data in raw_planets.items():
-            # إنشاء كائن كوكبي مرن يقبل الاستدعاء عبر .longitude
             class PlanetAdapter:
                 def __init__(self, data):
                     self.longitude = getattr(data, 'longitude', getattr(data, 'abs_degree', getattr(data, 'degree', 0.0)))
             self.planets[p_name] = PlanetAdapter(p_data)
+            
+        # نسخ وتكييف الاتصالات (Aspects) وحل مشكلة p1 و p2 ديناميكياً
+        self.aspects = []
+        raw_aspects = getattr(raw_chart, 'aspects', [])
+        for aspect in raw_aspects:
+            class AspectAdapter:
+                def __init__(self, asp):
+                    # فحص واكتشاف اسم الحقل المستخدم في كائن السويس إيفيمريس لديك للجرام الأول والثاني
+                    self.p1 = getattr(asp, 'p1', getattr(asp, 'planet1', getattr(asp, 'p1_name', None)))
+                    self.p2 = getattr(asp, 'p2', getattr(asp, 'planet2', getattr(asp, 'p2_name', None)))
+                    self.type = getattr(asp, 'type', getattr(asp, 'aspect_type', 'Conjunction'))
+                    self.orb = getattr(asp, 'orb', 0.0)
+            
+            adapted_asp = AspectAdapter(aspect)
+            # لا نضيف الاتصال إلا إذا نجح المحرك في قراءة أسماء الكواكب التابعة له
+            if adapted_asp.p1 and adapted_asp.p2:
+                self.aspects.append(adapted_asp)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -177,9 +188,7 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        is_unknown = context.user_data.get('unknown_time', False)
-        
-        # 3. تغليف الكائن بـ Adapter مرن لتجنب قيود Pydantic وتمريره لـ drawer بأمان
+        # 3. معالجة وتوليد الرسم الهندسي الاحترافي SVG وإرساله كوثيقة فورية
         try:
             adapted_chart = FlexibleChartAdapter(chart_data)
             chart_svg_string = drawer.generate_chart_svg(adapted_chart)
@@ -194,8 +203,8 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         except Exception as draw_err:
             logger.error(f"Error during chart drawing generation: {draw_err}", exc_info=True)
 
-        # 4. توليد التقرير المختصر واستبدال تاجات السكور
-        summary_msg = interpreter.get_minimal_summary(chart_data, unknown_time=is_unknown)
+        # 4. حل مشكلة دالة التفسير: استدعاء الدالة وحذف البارامتر غير المدعوم
+        summary_msg = interpreter.get_minimal_summary(chart_data)
         score_display = "🚧 قيد التطوير والحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
@@ -232,8 +241,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(detailed_report, reply_markup=reply_markup, parse_mode="Markdown")
         
     elif query.data == "menu_back":
-        is_unknown = context.user_data.get('unknown_time', False)
-        summary_msg = interpreter.get_minimal_summary(chart_data, unknown_time=is_unknown)
+        summary_msg = interpreter.get_minimal_summary(chart_data)
         
         total_score = context.user_data.get('last_score', 0)
         score_display = "🚧 قيد التطوير والحساب" if total_score == 0 else f"{total_score}"
