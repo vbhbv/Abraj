@@ -186,33 +186,30 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. معالجة وتوليد الرسم الهندسي وتحويله البرمي الآمن للنظام
+        # 3. توليد الرسم المتجهي وإرساله برمجياً بآمان كامل دون الحاجة لمكتبات نظام رسومية
         try:
-            from svglib.svglib import svg2rlg
-            from reportlab.graphics import renderPDF
-            from reportlab.pdfgen import canvas
-            
             adapted_chart = FlexibleChartAdapter(chart_data)
             chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             
-            # حماية ذكية: بدلاً من التحويل لـ PNG عبر محركات خارجية قد تنهار، نرسل ملف الـ SVG النقي مباشرة كوثيقة سريعة ومضمونة 100% لثبات السيرفر
+            # تحويل النص المتجهي إلى بايتات آمنة داخل الذاكرة كملف جاهز
             svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
             svg_bytes.name = "natal_chart.svg"
             
+            # إرسال الخريطة فوراً دون أي إبطاء
             await update.message.reply_document(
                 document=svg_bytes,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك البكر.",
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك، ويمكنك فتحها من أي هاتف أو متصفح بجودة خارقة.",
                 parse_mode="Markdown"
             )
         except Exception as draw_err:
-            logger.error(f"Error during chart drawing handling: {draw_err}", exc_info=True)
+            logger.error(f"Error during chart drawing output: {draw_err}", exc_info=True)
 
-        # 4. حل مشكلة دالة التفسير
+        # 4. حل مشكلة دالة التفسير النصي للمستخدم
         summary_msg = interpreter.get_minimal_summary(chart_data)
         score_display = "🚧 قيد التطوير والحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
-        # 5. بناء مصفوفة الأزرار الجذابة التشويقية الجديدة
+        # 5. بناء مصفوفة الأزرار الجذابة التشويقية
         keyboard = [
             [InlineKeyboardButton("🧠 شخصيتك الحقيقية", callback_data="menu_personal"), InlineKeyboardButton("❤️ الحب والزواج", callback_data="menu_love")],
             [InlineKeyboardButton("💼 المهنة المناسبة", callback_data="menu_career"), InlineKeyboardButton("💰 المال والثروة", callback_data="menu_money")],
