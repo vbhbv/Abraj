@@ -1,3 +1,5 @@
+import json
+import os
 from typing import Dict, Any, List
 
 class AstrologicalInterpreter:
@@ -22,14 +24,14 @@ class AstrologicalInterpreter:
         "Trine": "تثليث", "Opposition": "مقابلة"
     }
 
-    def __init__(self):
-        # 2. القاموس التفسيري الموسع (الكواكب في الأبراج)
-        self.planet_sign_db: Dict[str, Dict[str, str]] = {
+    def __init__(self, json_path="interpretations.json"):
+        # قواميس مدمجة للطوارئ في حال عدم وجود الكوكب داخل ملف الـ JSON
+        self.fallback_sign_db: Dict[str, Dict[str, str]] = {
             "Sun": {
                 "Aries": "تمنحك طاقة حيوية دافعة، وشخصية قيادية مبادرة تميل إلى مواجهة التحديات مباشرة بكبرياء وشجاعة.",
                 "Taurus": "تمنحك شخصية مستقرة، عملية، تبحث عن الأمان المادي والمعنوي، وتتميز بصبر هائل وقدرة على البناء طويل الأمد.",
                 "Gemini": "تضفي على شخصيتك فضولاً فكرياً حاداً، ومهارة في التواصل، وشغفاً بتعلم أشياء متعددة في وقت واحد.",
-                "Cancer": "تجعل جوهرك متمحوراً حول العاطفة، الحماية، والارتباط العميق بالجذور، العائلة، والمحيط الآمن.",
+                "Cancer": "يجعل جوهرك متمحوراً حول العاطفة، الحماية، والارتباط العميق بالجذور، العائلة، والمحيط الآمن.",
                 "Leo": "تمنحك حضوراً مغناطيسياً، ورغبة طبيعية في التعبير عن الذات والتميز، مع كرم نفس ونزعة قيادية.",
                 "Virgo": "تجعلك شخصاً تحليلياً، يسعى نحو الكمال والترتيب، ويمتلك عقلية نقدية بارعة في حل المشكلات المعقدة.",
                 "Libra": "تمنحك روحاً ديبلوماسية، وبحثاً مستمراً عن التناغم والعدالة في العلاقات، وميلاً طبيعياً لكل ما هو فني وجمالي.",
@@ -55,7 +57,7 @@ class AstrologicalInterpreter:
             }
         }
 
-        # 3. القاموس التفسيري لوجود الكواكب في البيوت الفلكية
+        # قاموس تفسير البيوت الفلكية الثابت
         self.planet_house_db: Dict[str, Dict[int, str]] = {
             "Sun": {
                 1: "يقع تركيزك الأساسي على إثبات هويتك الفردية وبناء كاريزما شخصية طاغية في العالم الخارجي.",
@@ -67,6 +69,14 @@ class AstrologicalInterpreter:
                 4: "ارتباطك بالمنزل والعائلة يمثل الركيزة الأساسية لأمانك النفسي؛ تبحث عن ملاذ داخلي خاص بك دائماً."
             }
         }
+
+        # محاولة تحميل قاموس التفسيرات الشامل من ملف JSON الخارجي
+        absolute_path = os.path.abspath(json_path)
+        if os.path.exists(absolute_path):
+            with open(absolute_path, 'r', encoding='utf-8') as f:
+                self.planet_sign_db = json.load(f)
+        else:
+            self.planet_sign_db = {}
 
     def _get_sign_info(self, sign_name: str) -> tuple:
         return self.SIGNS_AR.get(sign_name, (sign_name, "🌌"))
@@ -82,21 +92,23 @@ class AstrologicalInterpreter:
         moon_sign = chart_data.planets['Moon'].sign
         moon_name, moon_emoji = self._get_sign_info(moon_sign)
 
-        # توليد أبرز المميزات ديناميكياً بناءً على المواقع الفلكية المتاحة
         highlights = []
         if sun_sign in ["Taurus", "Virgo", "Capricorn"]:
             highlights.append("امتلاك قدرة ممتازة على التنظيم، والواقعية، والانتباه لأدق التفاصيل.")
         if moon_sign in ["Sagittarius", "Aries", "Leo"]:
             highlights.append("العاطفة تميل إلى التحرر، الاستقلالية، والبحث المستمر عن الشغف والتجديد.")
-        if chart_data.planets['Sun'].house in [9, 11]:
-            highlights.append("ميل قوي جداً لتوسيع المعارف، دراسة الفلسفات، أو التطلع نحو السفر والاستكشاف.")
+        
+        try:
+            if chart_data.planets['Sun'].house in [9, 11]:
+                highlights.append("ميل قوي جداً لتوسيع المعارف، دراسة الفلسفات، أو التطلع نحو السفر والاستكشاف.")
+        except:
+            pass
 
         if not highlights:
             highlights = ["لديك تركيبة فلكية فريدة توازن بين الفكر والعاطفة.", "تمتلك طاقات واعدة تتضح في تفاصيل خريطتك الكاملة."]
 
         highlights_str = "\n• ".join(highlights)
 
-        # استخدام الـ Markdown الفاخر في الهيكلة
         msg = (
             "🔮 **ملخص خريطتك الفلكية**\n\n"
             f"🌅 **الطالع:** {asc_name} {asc_emoji}\n"
@@ -104,7 +116,7 @@ class AstrologicalInterpreter:
             f"🌙 **القمر:** {moon_name} {moon_emoji}\n\n"
             "📌 **أبرز ما يميز خريطتك:**\n"
             f"• {highlights_str}\n\n"
-            f"⭐ **المؤشر العام:** {getattr(chart_data, 'score', '78')}/100\n\n"
+            "⭐ **المؤشر العام:** SCORE_PLACEHOLDER/100\n\n"
             "اضغط على الأزرار أدناه لاستكشاف تحليلك بالتفصيل 👇"
         )
         return msg
@@ -119,8 +131,11 @@ class AstrologicalInterpreter:
             
             retro_str = " ⟨تراجع⟩ 🔄" if p_data.retrograde else ""
             
-            # جلب التفسير من القواميس المتطورة
+            # جلب التفسير: يبحث أولاً في الـ JSON، وإذا لم يجده يبحث في القاموس الداخلي، وإذا لم يجده يضع نصاً ترحيبياً آمنًا
             interpretation = self.planet_sign_db.get(p_name, {}).get(p_data.sign, "")
+            if not interpretation:
+                interpretation = self.fallback_sign_db.get(p_name, {}).get(p_data.sign, "تحليل طاقة هذا الموضع سيضاف قريباً في التحديثات.")
+                
             house_interp = self.planet_house_db.get(p_name, {}).get(p_data.house, "")
             
             p_text = f"{pl_emoji} **{pl_name_ar} في {sg_name_ar} {sg_emoji}** (الدرجة {p_data.degree}°){retro_str}\n"
@@ -134,4 +149,3 @@ class AstrologicalInterpreter:
             report.append(p_text)
             
         return "\n---\n".join(report)
-          
