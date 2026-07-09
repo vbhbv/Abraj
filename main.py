@@ -1,89 +1,55 @@
-import swisseph as swe
-from datetime import datetime
-from models import ChartResult, PlanetData, AspectData
-from utils import is_between_arc
+from fastapi import FastAPI, HTTPException
+import os
+from models import BirthDataInput, ChartResult, ProfileScores
+from chart import CoreAstrologyEngine
+from time_service import BirthDataService
+from facts_engine import FactsEngine
+from scoring import RulesEngine
 
-class CoreAstrologyEngine:
-    def __init__(self, ephe_path="./ephe"):
-        swe.set_ephe_path(ephe_path)
-        self.PLANETS = {
-            'Sun': swe.SUN, 'Moon': swe.MOON, 'Mercury': swe.MERCURY,
-            'Venus': swe.VENUS, 'Mars': swe.MARS, 'Jupiter': swe.JUPITER,
-            'Saturn': swe.SATURN, 'Uranus': swe.URANUS, 'Neptune': swe.NEPTUNE, 'Pluto': swe.PLUTO,
-            'Chiron': swe.CHIRON, 'NorthNode': swe.MEAN_NODE, 'Lilith': swe.MEAN_APOG  # التعديل الحرفي هنا
-        }
-        self.SIGNS = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
+app = FastAPI(
+    title="Professional Astrology Engine API",
+    description="Enterprise Architecture with Facts Engine Layer",
+    version="1.0.0"
+)
 
-    def _to_julian_day(self, dt: datetime) -> float:
-        return swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute / 60.0)
+# تهيئة المحركات تلقائياً من مجلد الجذر عند إقلاع السيرفر
+engine = CoreAstrologyEngine()
+time_service = BirthDataService()
 
-    def _determine_house(self, lon: float, cusps: list) -> int:
-        for i in range(1, 12):
-            if is_between_arc(cusps[i], cusps[i+1], lon):
-                return i
-        return 12
+@app.get("/")
+def health_check():
+    # جلب المتغيرات من لوحة تحكم الاستضافة للتأكد من ربطها بنجاح
+    db_url = os.getenv("DATABASE_URL")
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    
+    return {
+        "status": "online",
+        "engine": "Swiss Ephemeris Core",
+        "database_configured": True if db_url else False,
+        "telegram_bot_configured": True if bot_token else False
+    }
 
-    def compute_natal_chart(self, dt_utc: datetime, lat: float, lon: float) -> ChartResult:
-        jd = self._to_julian_day(dt_utc)
-        cusps, ascmc = swe.houses(jd, lat, lon, b'P')
-        
-        planets_computed = {}
-        for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd, swe_id)
-            long = res[0]
-            planets_computed[name] = PlanetData(
-                name=name, longitude=long, sign=self.SIGNS[int(long / 30)],
-                degree=round(long % 30, 2), house=self._determine_house(long, cusps),
-                retrograde=True if res[3] < 0 else False, speed=round(res[3], 4)
-            )
-            
-        sn_long = (planets_computed['NorthNode'].longitude + 180.0) % 360.0
-        planets_computed['SouthNode'] = PlanetData(
-            name='SouthNode', longitude=sn_long, sign=self.SIGNS[int(sn_long / 30)],
-            degree=round(sn_long % 30, 2), house=self._determine_house(sn_long, cusps),
-            retrograde=planets_computed['NorthNode'].retrograde, speed=planets_computed['NorthNode'].speed
-        )
+@app.post("/api/v1/chart", response_model=ChartResult, tags=["V1 Core"])
+def calculate_chart(birth_data: BirthDataInput):
+    try:
+        dt_utc = time_service.process_and_convert_to_utc(birth_data)
+        return engine.compute_natal_chart(dt_utc, birth_data.latitude, birth_data.longitude)
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Calculation Error: {str(e)}")
 
-        aspects_computed = self._compute_aspects_by_time_delta(jd, planets_computed)
+@app.post("/api/v1/facts", tags=["V1 Core"])
+def get_facts(chart: ChartResult):
+    return FactsEngine.extract_facts(chart)
 
-        return ChartResult(
-            ascendant=self.SIGNS[int(ascmc[0] / 30)], midheaven=self.SIGNS[int(ascmc[1] / 30)],
-            planets=planets_computed, aspects=aspects_computed, houses={i: float(cusps[i]) for i in range(1, 13)}
-        )
+@app.post("/api/v1/scoring", response_model=ProfileScores, tags=["V1 Core"])
+def get_scoring(chart: ChartResult):
+    facts = FactsEngine.extract_facts(chart)
+    return RulesEngine.evaluate(facts)
 
-    def _compute_aspects_by_time_delta(self, jd_current: float, planets_current: dict) -> list:
-        aspects = []
-        names = list(planets_current.keys())
-        ASPECT_TYPES = {0: 'Conjunction', 60: 'Sextile', 90: 'Square', 120: 'Trine', 180: 'Opposition'}
-        
-        jd_future = jd_current + (1.0 / 24.0)
-        planets_future = {}
-        for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd_future, swe_id)
-            planets_future[name] = res[0]
-        planets_future['SouthNode'] = (planets_future['NorthNode'] + 180.0) % 360.0
-
-        for i in range(len(names)):
-            for j in range(i + 1, len(names)):
-                p1, p2 = planets_current[names[i]], planets_current[names[j]]
-                diff = abs(p1.longitude - p2.longitude)
-                if diff > 180: diff = 360 - diff
-                
-                for angle, aspect_name in ASPECT_TYPES.items():
-                    orb = abs(diff - angle)
-                    allowed_orb = 8.0 if 'Sun' in [p1.name, p2.name] or 'Moon' in [p1.name, p2.name] else 5.5
-                    
-                    if orb <= allowed_orb:
-                        f_long1 = planets_future[p1.name]
-                        f_long2 = planets_future[p2.name]
-                        f_diff = abs(f_long1 - f_long2)
-                        if f_diff > 180: f_diff = 360 - f_diff
-                        future_orb = abs(f_diff - angle)
-                        
-                        is_applying = True if future_orb < orb else False
-                        
-                        aspects.append(AspectData(
-                            planet1=p1.name, planet2=p2.name,
-                            type=aspect_name, orb=round(orb, 2), applying=is_applying
-                        ))
-        return aspects
+if __name__ == "__main__":
+    import uvicorn
+    # جلب المنفذ ديناميكياً من السيرفر (يقوم Railway بتعيينه عبر متغير PORT تلقائياً)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
