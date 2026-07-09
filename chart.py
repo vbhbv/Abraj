@@ -4,7 +4,7 @@ from models import ChartResult, PlanetData, AspectData
 
 class CoreAstrologyEngine:
     def __init__(self, ephe_path="."):
-        # قمنا بتعطيل البحث عن الملفات الخارجية لاعتماد الحساب الرياضي المدمج
+        # تعطيل البحث عن الملفات الخارجية لاعتماد الحساب الرياضي المدمج
         # swe.set_ephe_path(ephe_path)
         
         self.PLANETS = {
@@ -36,12 +36,12 @@ class CoreAstrologyEngine:
         jd = self._to_julian_day(dt_utc)
         cusps, ascmc = swe.houses(jd, lat, lon, b'P')
         
-        # استخدام علم (swe.FLG_MOSHIER) يجبر المحرك على الحساب الداخلي بدقة فائقة دون طلب ملفات
-        flag = swe.FLG_MOSHIER
+        # الرقم 4 يعبر برمجياً عن وضع (Moshier) للحساب الداخلي الفائق دون ملفات خارجية
+        FLAG_MOSHIER = 4
         
         planets_computed = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd, swe_id, flag)  # تم تمرير العلم هنا
+            res, _ = swe.calc_ut(jd, swe_id, FLAG_MOSHIER)  # تم تمرير القيمة الرقمية هنا
             long = res[0]
             planets_computed[name] = PlanetData(
                 name=name, longitude=long, sign=self.SIGNS[int(long / 30)],
@@ -71,7 +71,7 @@ class CoreAstrologyEngine:
         jd_future = jd_current + (1.0 / 24.0)
         planets_future = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd_future, swe_id, swe.FLG_MOSHIER)  # تم تمرير العلم هنا أيضاً
+            res, _ = swe.calc_ut(jd_future, swe_id, 4)  # تم استخدام القيمة 4 هنا أيضاً
             planets_future[name] = res[0]
         planets_future['SouthNode'] = (planets_future['NorthNode'] + 180.0) % 360.0
 
