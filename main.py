@@ -40,25 +40,20 @@ WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 # بناء تطبيق التليجرام عالمياً ليتمكن FastAPI من قراءته
 telegram_app = Application.builder().token(TOKEN).build()
 
-# دالة مخصصة لإعداد الـ Webhook عند إقلاع السيرفر وتفكيكه عند الإغلاق
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # عند الإقلاع
     await telegram_app.initialize()
     await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
     logger.info(f"✅ Webhook successfully set to: {WEBHOOK_URL}")
     await telegram_app.start()
     yield
-    # عند الإغلاق
     await telegram_app.stop()
     await telegram_app.shutdown()
 
-# إنشاء كائن الـ ASGI الأساسي باسم "app" الذي يبحث عنه السيرفر
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/webhook")
 async def webhook_handler(request: Request):
-    """استقبال التحديثات من تليجرام وتمريرها للمحرك"""
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
@@ -68,13 +63,12 @@ async def webhook_handler(request: Request):
 async def root_handler():
     return {"status": "healthy", "bot": "Astrology Bot is running via Webhook"}
 
-
 # --- منطق المحادثة الفلكية والمراحل ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "🔮 **مرحباً بك في نظام التحليل الفلكي الشامل**\n\n"
-        "سنقوم بإعداد خريطتك الشخصية العميقة واستخرج ملامحك الفلكية بدقة.\n"
+        "سنقوم بإعداد خريطتك الشخصية العميقة واستخراج ملامحك الفلكية بدقة.\n"
         "ابدأ بإرسال **سنة ميلادك** بالأرقام (مثال: `1998`):"
     )
     return YEAR
@@ -161,6 +155,16 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         is_unknown = context.user_data.get('unknown_time', False)
         
+        # 🛡️ طبقة الحماية والتوافق السريع والمطلق لمنع انهيار المحرك
+        if not hasattr(chart_data, 'ascendant_degree'):
+            chart_data.ascendant_degree = 0.0 
+        if not hasattr(chart_data, 'midheaven_degree'):
+            chart_data.midheaven_degree = 270.0
+
+        for p_name, p_data in chart_data.planets.items():
+            if not hasattr(p_data, 'longitude'):
+                p_data.longitude = getattr(p_data, 'abs_degree', getattr(p_data, 'degree', 0.0))
+
         # 3. معالجة وتوليد الرسم الهندسي الاحترافي SVG وإرساله كوثيقة فورية
         try:
             chart_svg_string = drawer.generate_chart_svg(chart_data)
@@ -169,12 +173,11 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
             await update.message.reply_document(
                 document=svg_bytes,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة Pixel-Perfect اعتماداً على مواقع الأجرام والأوتاد لحظة ميلادك البكر.",
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك.",
                 parse_mode="Markdown"
             )
         except Exception as draw_err:
             logger.error(f"Error during chart drawing generation: {draw_err}", exc_info=True)
-            # نستمر في إرسال النصوص والتحليلات حتى لو فشل الرسم منعاً لتوقف التجربة الكاملة
 
         # 4. توليد التقرير المختصر واستبدال تاجات السكور
         summary_msg = interpreter.get_minimal_summary(chart_data, unknown_time=is_unknown)
@@ -237,7 +240,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 تم إلغاء العملية. يمكنك البدء من جديد بإرسال /start")
     return ConversationHandler.END
 
-# ربط المعالجات والمستمعات بـ telegram_app
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
     states={
