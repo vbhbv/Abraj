@@ -3,8 +3,10 @@ from datetime import datetime
 from models import ChartResult, PlanetData, AspectData
 
 class CoreAstrologyEngine:
-    def __init__(self, ephe_path="./ephe"):
+    def __init__(self, ephe_path="."):
+        # الإشارة إلى جذر المشروع مباشرة لقراءة الملفات الفلكية المرفوعة
         swe.set_ephe_path(ephe_path)
+        
         self.PLANETS = {
             'Sun': swe.SUN, 'Moon': swe.MOON, 'Mercury': swe.MERCURY,
             'Venus': swe.VENUS, 'Mars': swe.MARS, 'Jupiter': swe.JUPITER,
@@ -20,8 +22,6 @@ class CoreAstrologyEngine:
         """
         تحديد البيت الفلكي للكوكب بشكل محمي ودائري يتفادى مشاكل عبور نقطة الصفر الفلكية.
         """
-        # مكتبة swisseph تعيد المصفوفة بطول 13 حيث العنصر index 0 مهمل والبيوت الفلكية من 1 لـ 12.
-        # سنقوم بتحويلها لقائمة صافية مكونة من 12 بيتاً لتسهيل الحساب الدائري.
         actual_cusps = list(cusps[1:]) if len(cusps) == 13 else list(cusps)
             
         for i in range(12):
@@ -29,7 +29,6 @@ class CoreAstrologyEngine:
             c_start = actual_cusps[i]
             c_end = actual_cusps[next_idx]
             
-            # التحقق من وقوع خط الطول (lon) داخل حدود البيت فلكياً ودائرياً
             if c_start <= c_end:
                 if c_start <= lon < c_end:
                     return i + 1
