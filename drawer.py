@@ -9,46 +9,45 @@ class AstrologyChartDrawer:
         self.cx = size / 2
         self.cy = size / 2
         
-        # نظام الحلقات الأربع الاحترافي الشامل (Radii Rings)
-        self.r_outer = 420       # إطار المتحدث الخارجي
-        self.r_zodiac_out = 410  # حد حلقة الأبراج الخارجي
-        self.r_zodiac_in = 350   # حد حلقة الأبراج الداخلي / حد حلقة الكواكب الخارجي
-        self.r_planets_in = 290  # حد حلقة الكواكب الداخلي / حد حلقة البيوت الخارجي
-        self.r_houses_in = 250   # حد حلقة البيوت الداخلي / بداية مساحة الاتصالات
+        # نظام الحلقات الشامل
+        self.r_outer = 420       
+        self.r_zodiac_out = 410  
+        self.r_zodiac_in = 350   
+        self.r_planets_in = 290  
+        self.r_houses_in = 250   
         
+        # تم استبدال الرموز بالاختصارات النصية الفلكية العالمية المكونة من 3 أحرف لضمان القراءة
         self.ZODIAC_UNICODE = {
-            "Aries": "♈", "Taurus": "♉", "Gemini": "♊", "Cancer": "♋",
-            "Leo": "♌", "Virgo": "♍", "Libra": "♎", "Scorpio": "♏",
-            "Sagittarius": "♐", "Capricorn": "♑", "Aquarius": "♒", "Pisces": "♓"
+            "Aries": "ARI", "Taurus": "TAU", "Gemini": "GEM", "Cancer": "CAN",
+            "Leo": "LEO", "Virgo": "VIR", "Libra": "LIB", "Scorpio": "SCO",
+            "Sagittarius": "SAG", "Capricorn": "CAP", "Aquarius": "AQU", "Pisces": "PIS"
         }
         
         self.PLANET_UNICODE = {
-            "Sun": "☉", "Moon": "☽", "Mercury": "☿", "Venus": "♀", 
-            "Mars": "♂", "Jupiter": "♃", "Saturn": "♄", "Uranus": "♅", 
-            "Neptune": "♆", "Pluto": "♇", "Chiron": "⚷", "NorthNode": "☊",
-            "Lilith": "⚸"
+            "Sun": "SUN", "Moon": "MOO", "Mercury": "MER", "Venus": "VEN", 
+            "Mars": "MAR", "Jupiter": "JUP", "Saturn": "SAT", "Uranus": "URA", 
+            "Neptune": "NEP", "Pluto": "PLU", "Chiron": "CHI", "NorthNode": "NOD",
+            "Lilith": "LIL"
         }
 
         self.ASPECT_COLORS = {
-            "Conjunction": (255, 215, 0),    # ذهبي
-            "Sextile": (0, 255, 127),        # أخضر
-            "Square": (255, 69, 0),          # برتقالي محمر
-            "Trine": (30, 144, 255),         # أزرق
-            "Opposition": (148, 0, 211)       # بنفسجي
+            "Conjunction": (255, 215, 0),    
+            "Sextile": (0, 255, 127),        
+            "Square": (255, 69, 0),          
+            "Trine": (30, 144, 255),         
+            "Opposition": (148, 0, 211)       
         }
 
     def _to_radians(self, degrees: float) -> float:
         return math.radians(degrees)
 
     def _get_coordinates(self, angle_deg: float, radius: float) -> tuple:
-        """تحويل من قطبي إلى ديكارتي مع تدوير النظام لتبدأ الدائرة دائماً من الطالع"""
         rad = self._to_radians(180.0 - angle_deg)
         x = self.cx + radius * math.cos(rad)
         y = self.cy + radius * math.sin(rad)
         return round(x, 2), round(y, 2)
 
     def _format_degree(self, num_deg: float) -> str:
-        """تحويل الدرجة العشرية إلى صيغة فلكية كلاسيكية مثل 24°46'"""
         degrees = int(num_deg)
         minutes = int(round((num_deg - degrees) * 60))
         if minutes == 60:
@@ -56,8 +55,7 @@ class AstrologyChartDrawer:
             minutes = 0
         return f"{degrees}°{minutes:02d}'"
 
-    def _resolve_collisions(self, planets_angles: List[Dict[str, Any]], min_dist: float = 7.5) -> List[Dict[str, Any]]:
-        """خوارزمية ذكية مخصصة لمنع تداخل رموز الكواكب والدرجات تقائياً"""
+    def _resolve_collisions(self, planets_angles: List[Dict[str, Any]], min_dist: float = 8.5) -> List[Dict[str, Any]]:
         sorted_planets = sorted(planets_angles, key=lambda x: x['orig_angle'])
         n = len(sorted_planets)
         if n <= 1:
@@ -81,21 +79,21 @@ class AstrologyChartDrawer:
         return sorted_planets
 
     def generate_chart_png(self, chart_data: Any) -> bytes:
-        """توليد بايتات صورة PNG حقيقية مباشرة متوافقة كلياً مع ملف main.py والأندرويد"""
-        # 1. إنشاء خلفية الصورة الداكنة
+        # 1. إنشاء الخلفية
         image = Image.new("RGBA", (self.size, self.size), (13, 17, 23, 255))
         image_draw = ImageDraw.Draw(image)
         
+        # استخدام الخط الافتراضي مع أحجام مناسبة للنصوص الإنجليزية المدمجة بكافة السيرفرات
         try:
-            font_zodiac = ImageFont.load_default(size=28)
-            font_planet = ImageFont.load_default(size=22)
-            font_text = ImageFont.load_default(size=12)
+            font_zodiac = ImageFont.load_default(size=14)
+            font_planet = ImageFont.load_default(size=13)
+            font_text = ImageFont.load_default(size=11)
         except Exception:
             font_zodiac = font_planet = font_text = ImageFont.load_default()
 
         asc_deg = getattr(chart_data, 'ascendant_degree', 0.0)
         
-        # 2. رسم الحلقات الأربع المركزية الفلكية (تم تعديل stroke إلى outline هنا)
+        # 2. رسم الحلقات
         image_draw.ellipse([self.cx - self.r_outer, self.cy - self.r_outer, self.cx + self.r_outer, self.cy + self.r_outer], outline=(33, 38, 45, 255), width=1)
         image_draw.ellipse([self.cx - self.r_zodiac_out, self.cy - self.r_zodiac_out, self.cx + self.r_zodiac_out, self.cy + self.r_zodiac_out], outline=(48, 54, 61, 255), width=2)
         image_draw.ellipse([self.cx - self.r_zodiac_in, self.cy - self.r_zodiac_in, self.cx + self.r_zodiac_in, self.cy + self.r_zodiac_in], fill=(22, 27, 34, 255), outline=(48, 54, 61, 255), width=2)
@@ -169,9 +167,9 @@ class AstrologyChartDrawer:
                     'display_deg': p_data.longitude % 30
                 })
 
-        resolved_planets = self._resolve_collisions(raw_planets_data, min_dist=7.5)
+        resolved_planets = self._resolve_collisions(raw_planets_data, min_dist=8.5)
 
-        # 7. رسم الأجرام والدرجات الفلكية بصبغة البكسل
+        # 7. رسم الأجرام والدرجات الفلكية
         for p in resolved_planets:
             sym = self.PLANET_UNICODE[p['name']]
             
