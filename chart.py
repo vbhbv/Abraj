@@ -4,8 +4,8 @@ from models import ChartResult, PlanetData, AspectData
 
 class CoreAstrologyEngine:
     def __init__(self, ephe_path="."):
-        # الإشارة إلى جذر المشروع مباشرة لقراءة الملفات الفلكية المرفوعة
-        swe.set_ephe_path(ephe_path)
+        # قمنا بتعطيل البحث عن الملفات الخارجية لاعتماد الحساب الرياضي المدمج
+        # swe.set_ephe_path(ephe_path)
         
         self.PLANETS = {
             'Sun': swe.SUN, 'Moon': swe.MOON, 'Mercury': swe.MERCURY,
@@ -19,32 +19,29 @@ class CoreAstrologyEngine:
         return swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute / 60.0)
 
     def _determine_house(self, lon: float, cusps) -> int:
-        """
-        تحديد البيت الفلكي للكوكب بشكل محمي ودائري يتفادى مشاكل عبور نقطة الصفر الفلكية.
-        """
         actual_cusps = list(cusps[1:]) if len(cusps) == 13 else list(cusps)
-            
         for i in range(12):
-            next_idx = (i + 1) % 12  # لربط البيت 12 بالبيت 1 دائرياً
+            next_idx = (i + 1) % 12
             c_start = actual_cusps[i]
             c_end = actual_cusps[next_idx]
-            
             if c_start <= c_end:
                 if c_start <= lon < c_end:
                     return i + 1
-            else:  # حالة قطع البيت لنقطة الصفر (360 / 0 درجة)
+            else:
                 if lon >= c_start or lon < c_end:
                     return i + 1
-                    
-        return 12  # خيار أمان افتراضي
+        return 12
 
     def compute_natal_chart(self, dt_utc: datetime, lat: float, lon: float) -> ChartResult:
         jd = self._to_julian_day(dt_utc)
         cusps, ascmc = swe.houses(jd, lat, lon, b'P')
         
+        # استخدام علم (swe.FLG_MOSHIER) يجبر المحرك على الحساب الداخلي بدقة فائقة دون طلب ملفات
+        flag = swe.FLG_MOSHIER
+        
         planets_computed = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd, swe_id)
+            res, _ = swe.calc_ut(jd, swe_id, flag)  # تم تمرير العلم هنا
             long = res[0]
             planets_computed[name] = PlanetData(
                 name=name, longitude=long, sign=self.SIGNS[int(long / 30)],
@@ -74,7 +71,7 @@ class CoreAstrologyEngine:
         jd_future = jd_current + (1.0 / 24.0)
         planets_future = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd_future, swe_id)
+            res, _ = swe.calc_ut(jd_future, swe_id, swe.FLG_MOSHIER)  # تم تمرير العلم هنا أيضاً
             planets_future[name] = res[0]
         planets_future['SouthNode'] = (planets_future['NorthNode'] + 180.0) % 360.0
 
