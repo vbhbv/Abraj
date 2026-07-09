@@ -58,7 +58,7 @@ class FlexibleChartAdapter:
                     self.longitude = getattr(data, 'longitude', getattr(data, 'abs_degree', getattr(data, 'degree', 0.0)))
             self.planets[p_name] = PlanetAdapter(p_data)
             
-        # نسخ وتكييف الاتصالات (Aspects) وحل مشكلة p1 و p2 ديناميكياً
+        # نسخ وتكييف الاتصالات (Aspects)
         self.aspects = []
         raw_aspects = getattr(raw_chart, 'aspects', [])
         for aspect in raw_aspects:
@@ -190,25 +190,22 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # 3. توليد الرسم بصيغة بايتات PNG حقيقية مباشرة عبر Pillow لمنع مشاكل العرض تماماً
         try:
             adapted_chart = FlexibleChartAdapter(chart_data)
-            
-            # استدعاء دالة الرسم المباشر لـ PNG (من التحديث الجديد لملف drawer.py)
             img_bytes_data = drawer.generate_chart_png(adapted_chart)
             
             img_buffer = io.BytesIO(img_bytes_data)
             img_buffer.name = "natal_chart.png"
             
-            # إرسال الخريطة كصورة حقيقية لتظهر فوراً على أندرويد وآيفون
             await update.message.reply_photo(
                 photo=img_buffer,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك، وهي مدعومة الآن للعرض المباشر على جميع الهواتف."
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك."
             )
         except Exception as draw_err:
-            logger.error(f"Error during chart drawing conversion or output: {draw_err}", exc_info=True)
+            logger.error(f"Error during chart drawing: {draw_err}", exc_info=True)
             await update.message.reply_text("⚠️ تم حساب بياناتك بنجاح ولكن تعذر توليد الصورة، جاري إرسال التقرير النصي...")
 
-        # 4. حل مشكلة دالة التفسير النصي للمستخدم
+        # 4. حل مشكلة دالة التفسير النصي للمخدم للمستخدم
         summary_msg = interpreter.get_minimal_summary(chart_data)
-        score_display = "🚧 قيد التطوير والحساب" if total_score == 0 else f"{total_score}"
+        score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
         # 5. بناء مصفوفة الأزرار الجذابة التشويقية
@@ -241,7 +238,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query.data == "menu_back":
         summary_msg = interpreter.get_minimal_summary(chart_data)
         total_score = context.user_data.get('last_score', 0)
-        score_display = "🚧 قيد التطوير والحساب" if total_score == 0 else f"{total_score}"
+        score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
             
         keyboard = [
@@ -254,79 +251,59 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(summary_msg, reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    # كائن تخطيط مخصص لزر العودة المشترك لجميع القوائم التفسيرية
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ العودة للقائمة الرئيسية", callback_data="menu_back")]])
 
-    # 1. قسم الشخصية الحقيقية
-    if query.data == "menu_personal":
-        report = (
-            "🧠 **تحليل الشخصية والهوية الحقيقية**\n\n"
-            "• **برجك الصاعد (الطالع):** هو القناع الاجتماعي والانطباع الأول الذي تتركه لدى الآخرين، والمدخل الأساسي لبيوت خريطتك الفلكية الحقيقية.\n"
-            "• **الشمس الفلكية:** تعبر عن جوهر ذاتك، مصدر طاقتك الحيوية، والمسار الرئيسي لتحقيق طموحاتك وبناء ثقتك بنفسك.\n"
-            "• **القمـر الفلكي:** يتحكم في عالمك العاطفي المخفي، احتياجاتك النفسية الأساسية للأمان، وطريقة استجابتك الباطنية للأحداث اليومية.\n\n"
-            "💡 *توجيه فلكي:* التكامل بين إرادة شمسك واحتياجات قمرك هو مفتاح استقرارك النفسي التام."
-        )
-        await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
+    # استدعاء التحليلات الفردية ديناميكياً من محرك التفسير حسب الزر المختار
+    try:
+        if query.data == "menu_personal":
+            if hasattr(interpreter, 'get_personal_analysis'):
+                report = interpreter.get_personal_analysis(chart_data)
+            else:
+                report = "🧠 **تحليل الشخصية والهوية حية**\n\n" + interpreter.get_detailed_report(chart_data).split('\n\n')[0]
+            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-    # 2. قسم الحب والزواج
-    elif query.data == "menu_love":
-        report = (
-            "❤️ **التحليل العاطفي، الحب والزواج**\n\n"
-            "• **كوكب الزهرة (Venus):** يمثل لغتك العاطفية الخاصة، طريقتك في التعبير عن الحب، ومقاييس الانسجام والجمال والتناغم في علاقاتك.\n"
-            "• **البيت السابع (بيت الشراكات):** يعكس طبيعة الارتباطات الزوجية طويلة المدى والمواصفات العميقة للشريك الذي يكمل خريطتك.\n"
-            "• **كوكب المريخ (Mars):** يحكم مستوى الشغف، الجاذبية، والطاقة الدفاعية والاندفاعية داخل إطار العلاقات الفلكية الثنائية.\n\n"
-            "🔮 *مؤشر الشراكة:* يوضح التحليل الهندسي للخريطة أنك تبحث عن توازن حقيقي يجمع بين الدعم الفكري المشترك والأمان العاطفي المستقر."
-        )
-        await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
+        elif query.data == "menu_love":
+            if hasattr(interpreter, 'get_love_analysis'):
+                report = interpreter.get_love_analysis(chart_data)
+            else:
+                report = "❤️ **العلاقات والعاطفة بالتفصيل وفقاً لمواقع كواكبك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-    # 3. قسم المهنة المناسبة
-    elif query.data == "menu_career":
-        report = (
-            "💼 **المسار المهني والنجاح العملي**\n\n"
-            "• **وتد وسط السماء (MC / البيت العاشر):** يمثل قمة طموحاتك الاجتماعية، السمعة المهنية، وأعلى إنجاز وتقدير علني يمكنك بلوغه.\n"
-            "• **البيت السادس:** يوضح روتينك المهني اليومي، بيئة العمل المفضلة، وطريقة إدارتك للمسؤوليات والواجبات الموكلة إليك.\n"
-            "• **كوكب زحل (Saturn):** يشير إلى مجالات الانضباط والدروس الفلكية الجادة التي تصنع خبرتك الاحترافية العميقة على المدى الطويل.\n\n"
-            "🚀 *التوجيه العملي:* تظهر طاقة خريطتك ميلاً طبيعياً نحو مجالات العمل الاستشارية والتنظيمية التي تمنحك استقلالية في التقييم والأداء."
-        )
-        await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
+        elif query.data == "menu_career":
+            if hasattr(interpreter, 'get_career_analysis'):
+                report = interpreter.get_career_analysis(chart_data)
+            else:
+                report = "💼 **المسار المهني والعملي الأكثر توافقاً مع خريطتك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-    # 4. قسم المال والثروة
-    elif query.data == "menu_money":
-        report = (
-            "💰 **المال، الثروة والقدرات المالية**\n\n"
-            "• **البيت الثاني (بيت المال والقيم):** يحكم قدرتك الشخصية على توليد الدخل والمكاسب المالية بمجهودك الذاتي، وطبيعة نظرتك للاستقرار المادي.\n"
-            "• **البيت الثامن:** يحكم الاستثمارات المشتركة، الدعم المالي الخارجي، القروض، والمواريث، وكل ما يتعلق بأموال الآخرين المتداخلة معك.\n"
-            "• **كوكب المشتري (Jupiter):** يمثل بوابة التوسع، الوفرة المادية، والحظوظ التي تفتح آفاقاً غير متوقعة للنمو المالي في خريطتك.\n\n"
-            "📈 *رؤية فلكية:* الازدهار المالي في خريطتك يرتبط ارتباطاً وثيقاً بالتخطيط الاستثماري التدريجي والابتعاد التام عن المغامرات غير المدروسة."
-        )
-        await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
+        elif query.data == "menu_money":
+            if hasattr(interpreter, 'get_money_analysis'):
+                report = interpreter.get_money_analysis(chart_data)
+            else:
+                report = "💰 **التحليل المالي ومصادر الوفرة والدخل الذاتي:**\n\n" + interpreter.get_detailed_report(chart_data)
+            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-    # 5. قسم نقاط القوة والضعف
-    elif query.data == "menu_features":
-        report = (
-            "🌟 **تحليل نقاط القوة والضعف الفلكية**\n\n"
-            "💪 **أبرز نقاط القوة:**\n"
-            "تتمتع بعقلية تحليلية ثاقبة بفضل الاتصالات الإيجابية لعطارد، مما يمنحك سرعة بديهة في حل الأزمات المعقدة والقدرة على رؤية ما وراء السطور.\n\n"
-            "⚠️ **التحديات (نقاط الضعف):**\n"
-            "قد تقع أحياناً في فخ التفكير المفرط (Overthinking) والقلق والتحليل المتزايد، وهو تأثير تقليدي ناجم عن اتصالات زحل أو تواجد الكواكب في البيوت المائية.\n\n"
-            "🛡️ *استراتيجية فلكية:* استغل مهاراتك التحليلية العالية لترتيب خطط عمل واضحة بدلاً من تركها تتحول إلى ضغوط نفسية داخلية."
-        )
-        await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
+        elif query.data == "menu_features":
+            if hasattr(interpreter, 'get_features_analysis'):
+                report = interpreter.get_features_analysis(chart_data)
+            else:
+                report = "🌟 **نقاط القوة، الضعف والتحديات الناتجة عن اتصالات كواكبك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-    # 6. قسم التوقعات
-    elif query.data == "menu_predict":
-        report = (
-            "🔮 **التوقعات الفلكية والفترات القادمة**\n\n"
-            "• **حركة العبور الحالية (Transits):** يمر المشهد الفلكي الحالي بتأثيرات انتقالية هامة؛ حيث يحثك تواجد الكواكب البطيئة في مواقع أوتادك على اتخاذ قرارات حاسمة تخص الاستقرار بعيد المدى.\n"
-            "• **التحول الزمني:** حان الوقت لفرز العلاقات والأنشطة والتخلي التام عن الأنماط القديمة المستهلكة لإفساح المجال لدورات فلكية جديدة ومثمرة.\n\n"
-            "✨ *الخلاصة:* هذه الفترة مخصصة لإرساء القواعد الحقيقية لبناء المستقبل، والنتائج الملموسة لهذا الجهد ستبدأ في الظهور تدريجياً مع اكتمال الربع القادم."
-        )
-        await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
+        elif query.data == "menu_predict":
+            if hasattr(interpreter, 'get_predictions_analysis'):
+                report = interpreter.get_predictions_analysis(chart_data)
+            else:
+                report = "🔮 **التوقعات الزمنية والعبور الفلكي القادم المؤثر عليك:**\n\n" + interpreter.get_detailed_report(chart_data)
+            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-    # 7. قسم الخريطة الكاملة للمحترفين
-    elif query.data == "menu_full_chart":
-        detailed_report = interpreter.get_detailed_report(chart_data)
-        await query.edit_message_text(detailed_report, reply_markup=back_markup, parse_mode="Markdown")
+        elif query.data == "menu_full_chart":
+            detailed_report = interpreter.get_detailed_report(chart_data)
+            await query.edit_message_text(detailed_report, reply_markup=back_markup, parse_mode="Markdown")
+            
+    except Exception as exc:
+        logger.error(f"Error handling menu click {query.data}: {exc}")
+        await query.message.reply_text("⚠️ تعذر استخراج هذا القسم ديناميكياً، يرجى استخدام خيار الخريطة الكاملة.")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 تم إلغاء العملية. يمكنك البدء من جديد بإرسال /start")
@@ -344,7 +321,7 @@ conv_handler = ConversationHandler(
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_location)],
     },
     fallbacks=[CommandHandler('cancel', cancel)],
-    per_message=False  # تفعيل الضبط الصريح لمنع أي تحذيرات أو مشاكل في تتبع الحالات
+    per_message=False
 )
 
 telegram_app.add_handler(conv_handler)
