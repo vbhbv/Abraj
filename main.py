@@ -186,28 +186,28 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. معالجة وتوليد الرسم الهندسي وتحويله إلى PNG باستخدام المحرك المستقر resvg
+        # 3. معالجة وتوليد الرسم الهندسي وتحويله إلى PNG باستخدام محرك CairoSVG المستقر
         try:
-            from resvg_py import resvg
+            import cairosvg
 
             adapted_chart = FlexibleChartAdapter(chart_data)
             chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             
-            # تحويل المتجهات بنقاء مطلق ودعم كامل لكافة العناصر والتدرجات
-            png_bytes = resvg.svg_to_png(svg_string=chart_svg_string)
+            # تحويل المتجهات مباشرة لبايتات PNG في الذاكرة
+            png_bytes = cairosvg.svg2png(bytestring=chart_svg_string.encode('utf-8'))
             
             png_io = io.BytesIO(png_bytes)
             png_io.seek(0)
             png_io.name = "natal_chart.png"
             
-            # إرسالها كصورة حقيقية مرئية فورية داخل المحادثة
+            # إرسالها كصورة حقيقية مرئية فورية داخل المحادثة للمستخدم
             await update.message.reply_photo(
                 photo=png_io,
                 caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك البكر.",
                 parse_mode="Markdown"
             )
         except Exception as draw_err:
-            logger.error(f"Error during chart drawing conversion via resvg: {draw_err}", exc_info=True)
+            logger.error(f"Error during chart drawing conversion via CairoSVG: {draw_err}", exc_info=True)
             # خط دفاع احتياطي أخير لإرسال الـ SVG في حال حدوث عطل غير متوقع
             try:
                 svg_bytes = io.BytesIO(chart_svg_string.encode('utf-8'))
