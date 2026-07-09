@@ -1,6 +1,7 @@
 import logging
 import os
 import io
+import cairosvg
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, Any
@@ -22,14 +23,14 @@ from scoring import RulesEngine
 from interpreter import AstrologicalInterpreter
 from drawer import AstrologyChartDrawer
 
-# إعداد السجلات (Logging)
+# 1. إعداد السجلات (Logging)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# تعريف مراحل المحادثة (Conversation States)
+# 2. تعريف مراحل المحادثة (Conversation States)
 YEAR, MONTH, DAY, KNOWS_TIME, TIME, LOCATION = range(6)
 
-# تهيئة المحركات الأساسية
+# 3. تهيئة المحركات الأساسية
 engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
@@ -73,6 +74,7 @@ class FlexibleChartAdapter:
             if adapted_asp.p1 and adapted_asp.p2:
                 self.aspects.append(adapted_asp)
 
+# 4. إدارة دورة حياة FastAPI والتليجرام (Lifespan)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await telegram_app.initialize()
@@ -186,32 +188,24 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
 
-        # 3. توليد الرسم وإرساله كصورة متوافقة مع أندرويد وآيفون
+        # 3. توليد الرسم ومعالجته الجذري بـ CairoSVG لمنع مشاكل العرض تماماً
         try:
             adapted_chart = FlexibleChartAdapter(chart_data)
+            chart_svg_string = drawer.generate_chart_svg(adapted_chart)
             
-            # فحص إذا كان محرك الرسم يحتوي على دالة لتوليد صورة PNG أو JPG مباشرة
-            if hasattr(drawer, 'generate_chart_png'):
-                img_bytes_data = drawer.generate_chart_png(adapted_chart)
-                img_buffer = io.BytesIO(img_bytes_data)
-                img_buffer.name = "natal_chart.png"
-            elif hasattr(drawer, 'generate_chart_jpg'):
-                img_bytes_data = drawer.generate_chart_jpg(adapted_chart)
-                img_buffer = io.BytesIO(img_bytes_data)
-                img_buffer.name = "natal_chart.jpg"
-            else:
-                # حل احتياطي: إذا كان المحرك ينتج SVG فقط، نرسله كملف مسمى بامتداد متوافق للمعاينة
-                chart_svg_string = drawer.generate_chart_svg(adapted_chart)
-                img_buffer = io.BytesIO(chart_svg_string.encode('utf-8'))
-                img_buffer.name = "natal_chart.png"  # إيهام التطبيق بالامتداد لتحسين العرض التلقائي
-
-            # إرسال الخريطة كـ Photo لتظهر مباشرة في الدردشة على أندرويد وآيفون دون الحاجة لفتحها كملف
+            # التحويل الحقيقي إلى بايتات صورة PNG آمنة
+            png_bytes = cairosvg.svg2png(bytestring=chart_svg_string.encode('utf-8'))
+            img_buffer = io.BytesIO(png_bytes)
+            img_buffer.name = "natal_chart.png"
+            
+            # إرسال الخريطة كصورة حقيقية لتظهر فوراً على أندرويد وآيفون
             await update.message.reply_photo(
                 photo=img_buffer,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك، وهي مدعومة الآن للعرض المباشر على جميع الهواتف.",
+                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك، وهي مدعومة الآن للعرض المباشر على جميع الهواتف."
             )
         except Exception as draw_err:
-            logger.error(f"Error during chart drawing output: {draw_err}", exc_info=True)
+            logger.error(f"Error during chart drawing conversion or output: {draw_err}", exc_info=True)
+            await update.message.reply_text("⚠️ تم حساب بياناتك بنجاح ولكن تعذر توليد الصورة، جاري إرسال التقرير النصي...")
 
         # 4. حل مشكلة دالة التفسير النصي للمستخدم
         summary_msg = interpreter.get_minimal_summary(chart_data)
@@ -273,6 +267,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 تم إلغاء العملية. يمكنك البدء من جديد بإرسال /start")
     return ConversationHandler.END
 
+# 5. تسجيل ومعالجة الـ Handlers
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
     states={
