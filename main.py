@@ -146,13 +146,18 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
         
+        # حساب السكور بشكل مستقل تماماً دون لمس كائن الخريطة المنهار
         facts = [] 
         score_data = RulesEngine.evaluate(facts)
-        chart_data.score = score_data.total_score 
+        total_score = score_data.total_score 
 
+        # حفظ كائن الخريطة والسكور بشكل منفصل داخل الجلسة
         context.user_data['last_chart'] = chart_data
+        context.user_data['last_score'] = total_score
 
+        # توليد النص واستبدال التاج بالرقم المحسوب حقيقياً
         summary_msg = interpreter.get_minimal_summary(chart_data)
+        summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", f"{total_score}")
         
         if context.user_data.get('unknown_time'):
             summary_msg += "\n\n⚠️ *تنبيه:* تم استخدام وقت افتراضي لعدم معرفة ساعة الولادة. (لم يتم حساب الطالع والبيوت بدقة)."
@@ -189,6 +194,11 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
     elif query.data == "menu_back":
         summary_msg = interpreter.get_minimal_summary(chart_data)
+        
+        # استدعاء السكور المخزن عند الرجوع للواجهة الرئيسية لمنع اختفائه
+        total_score = context.user_data.get('last_score', 78)
+        summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", f"{total_score}")
+        
         if context.user_data.get('unknown_time'):
             summary_msg += "\n\n⚠️ *تنبيه:* تم استخدام وقت افتراضي لعدم معرفة ساعة الولادة. (لم يتم حساب الطالع والبيوت بدقة)."
             
