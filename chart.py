@@ -5,10 +5,8 @@ from models import ChartResult, PlanetData, AspectData
 
 class CoreAstrologyEngine:
     def __init__(self, ephe_path="."):
-        # حل مشكلة مسارات النظام: جلب المسار الحقيقي الكامل لجذر مشروعك على سيرفر Railway
+        # تحديد المسار الحقيقي الكامل لجذر المشروع لقراءة ملف seas_18.se1 بنجاح
         absolute_path = os.path.abspath(ephe_path)
-        
-        # إجبار المكتبة على قراءة هذا المسار تحديداً وإلغاء مسارات Linux الافتراضية
         swe.set_ephe_path(absolute_path)
         
         self.PLANETS = {
@@ -40,12 +38,10 @@ class CoreAstrologyEngine:
         jd = self._to_julian_day(dt_utc)
         cusps, ascmc = swe.houses(jd, lat, lon, b'P')
         
-        # نستخدم الحساب الرياضي المدمج (4) لحماية إضافية
-        FLAG_MOSHIER = 4
-        
         planets_computed = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd, swe_id, FLAG_MOSHIER)
+            # تم إزالة وضع Moshier ليقوم المحرك بالقراءة من الملف المرفوع مباشرة وبأعلى دقة
+            res, _ = swe.calc_ut(jd, swe_id)
             long = res[0]
             planets_computed[name] = PlanetData(
                 name=name, longitude=long, sign=self.SIGNS[int(long / 30)],
@@ -75,7 +71,8 @@ class CoreAstrologyEngine:
         jd_future = jd_current + (1.0 / 24.0)
         planets_future = {}
         for name, swe_id in self.PLANETS.items():
-            res, _ = swe.calc_ut(jd_future, swe_id, 4)
+            # تم تنظيف دالة الحساب المستقبلية أيضاً لتقرأ من ملف الجداول الفلكية
+            res, _ = swe.calc_ut(jd_future, swe_id)
             planets_future[name] = res[0]
         planets_future['SouthNode'] = (planets_future['NorthNode'] + 180.0) % 360.0
 
