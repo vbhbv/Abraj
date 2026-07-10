@@ -2,13 +2,15 @@ import logging
 import os
 import io
 import json
+import random
+import time
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List
 
 from fastapi import FastAPI, Request, Response
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode  # التصحيح هنا: استيراد مود البارس الصحيح مباشرة
+from telegram.constants import ParseMode  
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -42,6 +44,61 @@ WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
 # بناء تطبيق التليجرام عالمياً ليتمكن FastAPI من قراءته
 telegram_app = Application.builder().token(TOKEN).build()
+
+
+# =====================================================================
+# محرك الخيرة الرقمية المرتبط بملف khira_data.json ونظام منع التكرار
+# =====================================================================
+class KhiraEngine:
+    def __init__(self, json_path: str = "khira_data.json"):
+        self.json_path = json_path
+        self.cooldowns = {}
+        self.cooldown_duration = 3600  # حظر التكرار لمدة ساعة واحدة (3600 ثانية)
+        self.khira_data = self.load_khira_json()
+
+    def load_khira_json(self) -> Dict[str, List[Dict[str, Any]]]:
+        try:
+            if os.path.exists(self.json_path):
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            else:
+                logger.warning(f"⚠️ الملف {self.json_path} غير موجود، تم اعتماد هيكل افتراضي.")
+                return {"good": [], "medium": [], "bad": []}
+        except Exception as e:
+            logger.error(f"Error loading Khira JSON file: {e}")
+            return {"good": [], "medium": [], "bad": []}
+
+    def check_cooldown(self, user_id: int) -> int:
+        """ترجع الدقائق المتبقية للمستخدم إذا كان في فترة الحظر، وإلا ترجع 0"""
+        current_time = time.time()
+        if user_id in self.cooldowns:
+            time_passed = current_time - self.cooldowns[user_id]
+            if time_passed < self.cooldown_duration:
+                return int((self.cooldown_duration - time_passed) // 60)
+        return 0
+
+    def get_random_khira(self, user_id: int) -> Dict[str, Any]:
+        # نظام الأوزان النسبية (جيد: 50%، وسط: 30%، نهي: 20%)
+        categories = ["good", "medium", "bad"]
+        weights = [0.50, 0.30, 0.20]
+        chosen_category = random.choices(categories, weights=weights, k=1)[0]
+        
+        options_list = self.khira_data.get(chosen_category, [])
+        if not options_list:
+            return {}
+            
+        self.cooldowns[user_id] = time.time()
+        return random.choice(options_list)
+
+    @staticmethod
+    def get_main_keyboard():
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔮 طلب خيرة جديدة", callback_data="khira_request")],
+            [InlineKeyboardButton("📜 شروط وآداب الخيرة", callback_data="khira_rules")]
+        ])
+
+# تهيئة محرك الخيرة عالمياً
+khira_engine = KhiraEngine()
 
 
 # =====================================================================
@@ -193,7 +250,19 @@ async def webhook_handler(request: Request):
 
 @app.get("/")
 async def root_handler():
-    return {"status": "healthy", "bot": "Astrology Bot is running via Webhook"}
+    return {"status": "healthy", "bot": "Astrology and Khira Bot is running via Webhook"}
+
+# --- منطق ومعالجات أمر الخيرة الرقمية ---
+
+async def khira_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_khira = (
+        "✨ **مرحباً بك في خدمة الخيرة والاستخارة الرقمية** ✨\n\n"
+        "«فَإِذَا عَزَمْتَ فَتَوَكَّلْ عَلَى اللَّهِ ۚ إِنَّ اللَّهَ يُحِبُّ الْمُتَوَكِّلِينَ»\n\n"
+        "يرجى استحضار النية، وقراءة سورة الفاتحة متبوعة بالصلاة على محمد وآل محمد، ثم اضغط على الزر أدناه لبدء الخيرة.\n\n"
+        "⚠️ **تنويه إخلاء مسؤولية:**\n"
+        "هذه الخدمة برمجية استرشادية رقمية مبنية على التفاؤل بالقرآن الكريم، وليست بديلاً عن الاستخارة الشرعية الفقهية."
+    )
+    await update.message.reply_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
 # --- منطق المحادثة الفلكية والمراحل ---
 
@@ -323,17 +392,84 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     return ConversationHandler.END
 
+
+# =====================================================================
+# معالج ضغطات الأزرار (الفلكية + الخيرة) الموحد
+# =====================================================================
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    
-    chart_data = context.user_data.get('last_chart')
-    if not chart_data:
-        await query.answer()
-        await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك أعد حساب الخريطة باستخدام الأمر /start")
+    user_id = query.from_user.id
+    data = query.data
+
+    # --- أولاً: معالجة أزرار نظام الخيرة ---
+    if data == "khira_request":
+        remaining = khira_engine.check_cooldown(user_id)
+        if remaining > 0:
+            await query.answer(
+                f"⚠️ لا يمكن تكرار الخيرة في نفس الأمر هكذا!\nانتظر {remaining} دقيقة أو تدبر في نتيجتك الحالية أولاً.",
+                show_alert=True
+            )
+            return
+
+        chosen = khira_engine.get_random_khira(user_id)
+        if not chosen:
+            await query.answer("عذراً، لم يتم العثور على نصوص كافية داخل ملف khira_data.json", show_alert=True)
+            return
+
+        await query.answer("جاري سحب نتيجتك الآن...")
+        result_text = (
+            f"🔮 **نتيجـة الخيـرة الخاصـة بك**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📖 **الآية الشريفة الصاعدة:**\n"
+            f"**{chosen['verse']}**\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📊 **الحكم والدرجة:**\n"
+            f"درجة التيسير: {chosen['stars']}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💬 **التوجيه والتفسير:**\n"
+            f"{chosen['interpretation']}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🤲 **الدعاء المستحب والعمل:**\n"
+            f"_{chosen['dua']}_\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ *ملاحظة: الخيرة للاسترشاد والتفاؤل، والأمر كله بيد الله تعالى.*"
+        )
+        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]])
+        await query.edit_message_text(result_text, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN)
         return
 
-    # زر العودة إلى القائمة الرئيسية
-    if query.data == "menu_back":
+    elif data == "khira_rules":
+        await query.answer()
+        rules_text = (
+            "📜 **آداب وشروط عمل الخيرة:**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "1️⃣ **النية الصادقة:** أن تكون حائراً فعلاً بين أمرين ولم تصل لقرار حاسم بعد الاستشارة والتدبر.\n"
+            "2️⃣ **عدم التكرار:** لا تُكرر الخيرة في نفس الأمر إطلاقاً ما لم تتغير ظروف القضية جذرياً.\n"
+            "3️⃣ **الرضا بالنتيجة:** تسليم الأمر لله تعالى والعمل بموجب التوجيه الصاعد بقلب مطمئن.\n"
+            "4️⃣ **الطهارة والتوجه:** يُفضل استحضار النية والوضوء متوجهاً للقبلة المشرفة أثناء طلب الخيرة."
+        )
+        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]])
+        await query.edit_message_text(rules_text, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN)
+        return
+
+    elif data == "khira_back":
+        await query.answer()
+        welcome_khira = (
+            "✨ **خدمة الخيرة والاستخارة الرقمية** ✨\n\n"
+            "يرجى استحضار النية والضغط على الزر أدناه لبدء الخيرة."
+        )
+        await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # --- ثانياً: معالجة أزرار نظام التحليل الفلكي ---
+    chart_data = context.user_data.get('last_chart')
+    if not chart_data:
+        if data.startswith("menu_"):
+            await query.answer()
+            await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك أعد حساب الخريطة باستخدام الأمر /start")
+        return
+
+    if data == "menu_back":
         await query.answer()
         summary_msg = interpreter.get_minimal_summary(chart_data)
         total_score = context.user_data.get('last_score', 0)
@@ -351,8 +487,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ العودة للقائمة الرئيسية", callback_data="menu_back")]])
-
-    # استخراج التقرير الشامل لتفكيكه وتصفيته بحسب كواكب كل قسم معني
     full_report = interpreter.get_detailed_report(chart_data)
     
     def extract_planets_info(report_text, target_planets):
@@ -366,8 +500,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return "⚠️ تفاصيل هذا القسم مدمجة في تقرير خريطتك الكاملة."
 
     try:
-        # 1. زر الشخصية الحقيقية (يسحب الشمس والقمر والطالع)
-        if query.data == "menu_personal":
+        if data == "menu_personal":
             await query.answer()
             asc_sign = getattr(chart_data, 'ascendant', 'غير معروف')
             planets_data = extract_planets_info(full_report, ["الشمس", "القمر"])
@@ -379,8 +512,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 2. زر الحب والزواج (يسحب الزهرة ونبتون والبيت 7)
-        elif query.data == "menu_love":
+        elif data == "menu_love":
             await query.answer()
             planets_data = extract_planets_info(full_report, ["الزهرة", "البيت 7", "نبتون"])
             report = (
@@ -390,8 +522,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 3. زر المهنة المناسبة (يسحب المريخ وعطارد والبيت 6 أو 11)
-        elif query.data == "menu_career":
+        elif data == "menu_career":
             await query.answer()
             planets_data = extract_planets_info(full_report, ["المريخ", "عطارد", "البيت 6", "البيت 11"])
             report = (
@@ -401,8 +532,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 4. زر المال والثروة (يسحب زحل والمشتري والبيت 2)
-        elif query.data == "menu_money":
+        elif data == "menu_money":
             await query.answer()
             planets_data = extract_planets_info(full_report, ["زحل", "المشتري", "البيت 2"])
             report = (
@@ -412,8 +542,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 5. زر نقاط القوة والضعف (يسحب تشيرون وليليث وعطارد)
-        elif query.data == "menu_features":
+        elif data == "menu_features":
             await query.answer()
             planets_data = extract_planets_info(full_report, ["تشيرون", "ليليث", "عطارد"])
             report = (
@@ -423,8 +552,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 6. زر التوقعات (يسحب أورانوس وبلوتو والعقد الفلكية)
-        elif query.data == "menu_predict":
+        elif data == "menu_predict":
             await query.answer()
             planets_data = extract_planets_info(full_report, ["أورانوس", "بلوتو", "العقدة الشمالية", "العقدة الجنوبية"])
             report = (
@@ -434,8 +562,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 7. زر الخريطة الكاملة للمحترفين (تفعيل الخوارزمية التركيبية المقسمة)
-        elif query.data == "menu_full_chart":
+        elif data == "menu_full_chart":
             await query.answer("جاري استخلاص وقراءة موازين الخريطة الفلكية لوضع المحترفين...")
             
             raw_planets = getattr(chart_data, 'planets', {})
@@ -446,8 +573,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             synthesis_engine = AstrologySynthesisEngine()
             chunks = synthesis_engine.synthesize_astrology_report(birth_map_data)
-            
-            user_id = query.from_user.id
             
             for i, chunk in enumerate(chunks):
                 if i == 0:
@@ -462,7 +587,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             
     except Exception as exc:
-        logger.error(f"Error handling menu click {query.data}: {exc}", exc_info=True)
+        logger.error(f"Error handling menu click {data}: {exc}", exc_info=True)
         await query.message.reply_text("⚠️ عذراً، جاري تحديث الفلترة الفلكية، يمكنك مراجعة التقرير الشامل مباشرة.")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -485,4 +610,5 @@ conv_handler = ConversationHandler(
 )
 
 telegram_app.add_handler(conv_handler)
-telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^menu_"))
+telegram_app.add_handler(CommandHandler('khira', khira_start))
+telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks))
