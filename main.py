@@ -1,12 +1,13 @@
 import logging
 import os
 import io
+import json
 from datetime import datetime
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from fastapi import FastAPI, Request, Response
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, enums
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -40,6 +41,102 @@ WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
 # بناء تطبيق التليجرام عالمياً ليتمكن FastAPI من قراءته
 telegram_app = Application.builder().token(TOKEN).build()
+
+
+# =====================================================================
+# محرك التحليل الفلكي التركيبي الذكي (النقلة التقنية للمحترفين)
+# =====================================================================
+class AstrologySynthesisEngine:
+    def __init__(self, json_path: str = "interpretations.json"):
+        self.json_path = json_path
+        self.interpretations = self.load_interpretations()
+        self.connectors = [
+            " يتكامل هذا التموقع بعمق مع وجوده في ",
+            "، الأمر الذي ينعكس بشكل مباشر على شؤون ",
+            "، مما يمنح طاقة هذا الكوكب تجسيداً عملياً داخل ",
+            " ليصبح مسرحاً رئيسياً لـ "
+        ]
+
+    def load_interpretations(self) -> Dict[str, Any]:
+        try:
+            with open(self.json_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading JSON file: {e}")
+            return {}
+
+    def calculate_element_balance(self, birth_data: Dict[str, str]) -> str:
+        elements = {"نارية": 0, "ترابية": 0, "هوائية": 0, "مائية": 0}
+        element_mapping = {
+            "Aries": "نارية", "Leo": "نارية", "Sagittarius": "نارية",
+            "Taurus": "ترابية", "Virgo": "ترابية", "Capricorn": "ترابية",
+            "Gemini": "هوائية", "Libra": "هوائية", "Aquarius": "هوائية",
+            "Cancer": "مائية", "Scorpio": "مائية", "Pisces": "مائية"
+        }
+        
+        for planet in ["Sun", "Moon", "Mercury", "Venus", "Mars"]:
+            sign = birth_data.get(planet)
+            if sign in element_mapping:
+                elements[element_mapping[sign]] += 1
+                
+        dominant_element = max(elements, key=elements.get)
+        balance_reports = {
+            "نارية": "🔥 تفوح خريطتك بطاقة نارية دافقة، مما يمنحك روحاً مبادرة، حماساً اشتعالياً، ورغبة مستمرة في قيادة واقعك وتحدي الركود.",
+            "ترابية": "🪵 تهيمن العناصر الترابية على بنيتك الفلكية، مما يجعلك شخصاً شديد الواقعية، يبحث عن الأمان الملموس، ويتقن الصبر وبناء الاستقرار طويل الأمد.",
+            "هوائية": "💨 طغيان الطابع الهوائي يمنحك عقلاً حاداً، وفضولاً معرفياً لا يهدأ، حيث تتنفس عبر الأفكار، التواصل، والتحليل المستمر للمحيط.",
+            "مائية": "💧 الغلبة هنا للعنصر المائي؛ أنت تسبح في عالم من الحدس، المشاعر العميقة، والامتصاص النفسي لطاقات الآخرين، مما يمنحك بصيرة شفائية استثنائية."
+        }
+        return balance_reports.get(dominant_element, "")
+
+    def detect_psychological_conflicts(self, birth_data: Dict[str, str]) -> List[str]:
+        conflicts = []
+        sun = birth_data.get("Sun")
+        moon = birth_data.get("Moon")
+        
+        if sun == "Leo" and moon in ["Virgo", "Cancer", "Scorpio"]:
+            conflicts.append(
+                "🔄 **تناقض الهوية الداخلي:** تختبر صراعاً صامتاً بين شمسك في الأسد التي تعشق التقدير والظهور، وبين قمرك الباطني الذي يميل للتحفظ، الخصوصية، والتحليل خلف الكواليس."
+            )
+        if sun == "Aries" and moon == "Libra":
+            conflicts.append(
+                "🔄 **محور المواجهة والسلام:** روحك ممزقة بين رغبة شمسك في الحسم والمواجهة الشجاعة المباشرة، وبين حاجة قمرك في الميزان للمداراة، الدبلوماسية، والحفاظ على السلم مع الآخرين بأي ثمن."
+            )
+        return conflicts
+
+    def synthesize_astrology_report(self, birth_data: Dict[str, str]) -> List[str]:
+        messages_to_send = []
+        header = "🔮 **التحليل الفلكي التركيبي للمحترفين** 🔮\n\n"
+        header += self.calculate_element_balance(birth_data) + "\n\n"
+        
+        conflicts = self.detect_psychological_conflicts(birth_data)
+        if conflicts:
+            header += "⚠️ **رادار البصيرة الفلكية (التناقضات المكتشفة):**\n" + "\n".join(conflicts) + "\n\n"
+            
+        header += "📌 **التشريح التفصيلي للمواضع الفلكية:**\n"
+        current_chunk = header
+        
+        for planet, sign in birth_data.items():
+            if planet in ["house_1", "house_2"] or "_house" in planet:
+                continue
+                
+            house = birth_data.get(f"{planet}_house", "1")
+            sign_text = self.interpretations.get(planet, {}).get(sign, "")
+            house_text = self.interpretations.get(planet, {}).get(str(house), "")
+            
+            if sign_text and house_text:
+                combined_analysis = f"🪐 **{planet} في {sign} داخل البيت {house}:**\n{sign_text}{self.connectors[1]}{house}\n↳ *العمق الاستراتيجي:* {house_text}\n\n"
+                
+                if len(current_chunk) + len(combined_analysis) > 3500:
+                    messages_to_send.append(current_chunk)
+                    current_chunk = combined_analysis
+                else:
+                    current_chunk += combined_analysis
+                    
+        if current_chunk:
+            messages_to_send.append(current_chunk)
+            
+        return messages_to_send
+
 
 # كائن وسيط مرن لتخطي قيود Pydantic وتوحيد أسماء الحقول لملف الرسم
 class FlexibleChartAdapter:
@@ -227,15 +324,16 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     
     chart_data = context.user_data.get('last_chart')
     if not chart_data:
+        await query.answer()
         await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك أعد حساب الخريطة باستخدام الأمر /start")
         return
 
     # زر العودة إلى القائمة الرئيسية
     if query.data == "menu_back":
+        await query.answer()
         summary_msg = interpreter.get_minimal_summary(chart_data)
         total_score = context.user_data.get('last_score', 0)
         score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
@@ -269,6 +367,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         # 1. زر الشخصية الحقيقية (يسحب الشمس والقمر والطالع)
         if query.data == "menu_personal":
+            await query.answer()
             asc_sign = getattr(chart_data, 'ascendant', 'غير معروف')
             planets_data = extract_planets_info(full_report, ["الشمس", "القمر"])
             report = (
@@ -281,6 +380,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # 2. زر الحب والزواج (يسحب الزهرة ونبتون والبيت 7)
         elif query.data == "menu_love":
+            await query.answer()
             planets_data = extract_planets_info(full_report, ["الزهرة", "البيت 7", "نبتون"])
             report = (
                 "❤️ **تحليل العلاقات، الحب والشراكات العاطفية**\n\n"
@@ -291,6 +391,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # 3. زر المهنة المناسبة (يسحب المريخ وعطارد والبيت 6 أو 11)
         elif query.data == "menu_career":
+            await query.answer()
             planets_data = extract_planets_info(full_report, ["المريخ", "عطارد", "البيت 6", "البيت 11"])
             report = (
                 "💼 **المسار المهني، بيئة العمل والإنتاجية الاحترافية**\n\n"
@@ -301,6 +402,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # 4. زر المال والثروة (يسحب زحل والمشتري والبيت 2)
         elif query.data == "menu_money":
+            await query.answer()
             planets_data = extract_planets_info(full_report, ["زحل", "المشتري", "البيت 2"])
             report = (
                 "💰 **التحليل المالي، إدارة الثروة وفرص الوفرة**\n\n"
@@ -311,6 +413,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # 5. زر نقاط القوة والضعف (يسحب تشيرون وليليث وعطارد)
         elif query.data == "menu_features":
+            await query.answer()
             planets_data = extract_planets_info(full_report, ["تشيرون", "ليليث", "عطارد"])
             report = (
                 "🌟 **تحليل نقاط القوة، التحديات والمخاوف النفسية الباطنية**\n\n"
@@ -321,6 +424,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # 6. زر التوقعات (يسحب أورانوس وبلوتو والعقد الفلكية)
         elif query.data == "menu_predict":
+            await query.answer()
             planets_data = extract_planets_info(full_report, ["أورانوس", "بلوتو", "العقدة الشمالية", "العقدة الجنوبية"])
             report = (
                 "🔮 **مؤشرات التغيير، التوقعات والتحولات الكرمية**\n\n"
@@ -329,12 +433,41 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
 
-        # 7. زر الخريطة الكاملة للمحترفين
+        # 7. زر الخريطة الكاملة للمحترفين (تفعيل الخوارزمية التركيبية المقسمة)
         elif query.data == "menu_full_chart":
-            await query.edit_message_text(full_report, reply_markup=back_markup, parse_mode="Markdown")
+            await query.answer("جاري استخلاص وقراءة موازين الخريطة الفلكية لوضع المحترفين...")
+            
+            # بناء قاموس ديناميكي متوافق مع المحرك من كائن الخريطة الفلكية الفعلي لتفادي الأخطاء الهيكلية
+            raw_planets = getattr(chart_data, 'planets', {})
+            birth_map_data = {}
+            for p_name, p_data in raw_planets.items():
+                birth_map_data[p_name] = getattr(p_data, 'sign', 'Aries')
+                birth_map_data[f"{p_name}_house"] = str(getattr(p_data, 'house', '1'))
+            
+            # استدعاء ومعالجة التقرير عبر المحرك المطور
+            synthesis_engine = AstrologySynthesisEngine()
+            chunks = synthesis_engine.synthesize_astrology_report(birth_map_data)
+            
+            user_id = query.from_user.id
+            
+            # إرسال الرسائل بشكل تتابعي متصل لحل مشكلة عدم عمل الزر نهائياً وسقوط النصوص الطويلة
+            for i, chunk in enumerate(chunks):
+                if i == 0:
+                    # تعديل أول رسالة لإظهار التقرير بدلاً من القائمة
+                    await query.edit_message_text(chunk, parse_mode=enums.ParseMode.MARKDOWN)
+                else:
+                    # إرسال بقية الأجزاء كرسائل تالية متتابعة تفادياً للـ Limit
+                    await telegram_app.bot.send_message(chat_id=user_id, text=chunk, parse_mode=enums.ParseMode.MARKDOWN)
+                    
+            # إلحاق زر العودة بالرسالة الأخيرة ليتمكن المستخدم من الرجوع
+            await telegram_app.bot.send_message(
+                chat_id=user_id,
+                text="✨ **انتهى تقرير المحترفين الشامل.** يمكنك الآن العودة للقائمة الرئيسية:",
+                reply_markup=back_markup
+            )
             
     except Exception as exc:
-        logger.error(f"Error handling menu click {query.data}: {exc}")
+        logger.error(f"Error handling menu click {query.data}: {exc}", exc_info=True)
         await query.message.reply_text("⚠️ عذراً، جاري تحديث الفلترة الفلكية، يمكنك مراجعة التقرير الشامل مباشرة.")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
