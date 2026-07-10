@@ -47,6 +47,55 @@ telegram_app = Application.builder().token(TOKEN).build()
 
 
 # =====================================================================
+# محرك تحديد المواقع المحلي (مجاني، فوري، ولا يستهلك موارد)
+# =====================================================================
+class LocalGeocodingEngine:
+    def __init__(self):
+        # قاموس مسبق الإعداد لأهم المدن والمحافظات العربية والعالمية (يمكنك التوسيع فيه بسهولة)
+        self.city_db = {
+            # العراق
+            "بغداد": (33.3152, 44.3661), "الموصل": (36.3400, 43.1300), "البصرة": (30.5081, 47.7835),
+            "أربيل": (36.1901, 44.0089), "السليمانية": (35.5560, 45.4330), "النجف": (32.0250, 44.3460),
+            "كربلاء": (32.6160, 44.0250), "كركوك": (35.4680, 44.3920), "الحلة": (32.4833, 44.4333),
+            "الديوانية": (31.9900, 44.9260), "الناصرية": (31.0500, 46.2600), "العمارة": (31.8400, 47.1500),
+            "الكوت": (32.5150, 45.8170), "الرمادي": (33.4166, 43.3000), "تكريت": (34.6000, 43.6800),
+            "بعقوبة": (33.7420, 44.6460), "السماوة": (31.3170, 45.2830), "دهوك": (36.8660, 42.9880),
+            
+            # مصر
+            "القاهرة": (30.0444, 31.2357), "الإسكندرية": (31.2001, 29.9187), "الجيزة": (30.0131, 31.2089),
+            
+            # السعودية ودول الخليج
+            "الرياض": (24.7136, 46.6753), "مكة": (21.3891, 39.8579), "جدة": (21.5433, 39.1728),
+            "المدينة": (24.4673, 39.6111), "دبي": (25.2048, 55.2708), "أبوظبي": (24.4539, 54.3773),
+            "الكويت": (29.3759, 47.9774), "المنامة": (26.2285, 50.5860), "الدوحة": (25.2854, 51.5310),
+            "مسقط": (23.5859, 58.4059),
+            
+            # الشام والبلدان العربية الأخرى
+            "دمشق": (33.5138, 36.2765), "حلب": (36.2021, 37.1343), "بيروت": (33.8938, 35.5018),
+            "عمان": (31.9454, 35.9284), "صنعاء": (15.3694, 44.1910), "الخرطوم": (15.5007, 32.5599),
+            "طرابلس": (32.8872, 13.1913), "تونس": (36.8065, 10.1815), "الجزائر": (36.7525, 3.0420),
+            "الرباط": (34.0209, -6.8416), "الدار البيضاء": (33.5731, -7.5898), "نواكشوط": (18.0735, -15.9582)
+        }
+        
+        # إحداثيات افتراضية في حال لم يتعرف البوت على النص المدخل (توضع العاصمة كمركز رئيسي)
+        self.default_coords = (33.3152, 44.3661) # بغداد كخيار افتراضي سلس
+        
+    def search_city(self, input_text: str) -> tuple:
+        # تنظيف النص لزيادة دقة البحث المحلي
+        clean_name = input_text.strip().replace("ة", "ه").replace("أ", "ا").replace("إ", "ا")
+        
+        for city, coords in self.city_db.items():
+            clean_city = city.replace("ة", "ه").replace("أ", "ا").replace("إ", "ا")
+            if clean_city in clean_name or clean_name in clean_city:
+                return city, coords[0], coords[1]
+                
+        return "بغداد (افتراضي)", self.default_coords[0], self.default_coords[1]
+
+# تهيئة المحرك عالمياً
+local_geo = LocalGeocodingEngine()
+
+
+# =====================================================================
 # محرك الخيرة الرقمية المرتبط بملف khira_data.json ونظام منع التكرار
 # =====================================================================
 class KhiraEngine:
@@ -96,7 +145,6 @@ class KhiraEngine:
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
         ])
 
-# تهيئة محرك الخيرة عالمياً
 khira_engine = KhiraEngine()
 
 
@@ -224,7 +272,7 @@ class FlexibleChartAdapter:
             if adapted_asp.p1 and adapted_asp.p2:
                 self.aspects.append(adapted_asp)
 
-# 4. إدارة دورة حياة FastAPI والتليجرام (Lifespan)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await telegram_app.initialize()
@@ -279,10 +327,9 @@ async def khira_start_from_menu(query: Update.callback_query, context: ContextTy
     await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
 
-# --- بدء استمارة الأبراج من ضغطة زر ---
 async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer() # إنهاء حالة الانتظار في التليجرام فوراً ليفتح القسم بسلاسة
+    await query.answer() 
     
     await query.edit_message_text(
         "🔮 **نظام التحليل الفلكي الشامل**\n\n"
@@ -323,7 +370,7 @@ async def p_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data['hour'] = 12
         context.user_data['minute'] = 0
         context.user_data['unknown_time'] = True
-        await query.edit_message_text("📍 أرسل الإحداثيات الجغرافية لمكان ميلادك بتنسيق (خط العرض,خط الطول) مثال: `36.34,43.13`:")
+        await query.edit_message_text("📍 أرسل **اسم مدينة ميلادك** (مثال: `بغداد` ، `الموصل` ، `القاهرة`):")
         return LOCATION
 
 async def p_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -337,16 +384,15 @@ async def p_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("⚠️ تنسيق غير صحيح، يرجى إرساله مثل `14:30`:")
         return TIME
 
-    await update.message.reply_text("📍 أرسل الإحداثيات الجغرافية لمكان ميلادك بتنسيق (خط العرض,خط الطول) مثال: `36.34,43.13`:")
+    await update.message.reply_text("📍 أرسل **اسم مدينة ميلادك** (مثال: `بغداد` ، `الموصل` ، `القاهرة`):")
     return LOCATION
 
 async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        loc_str = update.message.text.strip()
-        lat, lon = map(float, loc_str.split(','))
-    except ValueError:
-        await update.message.reply_text("⚠️ التنسيق خاطئ، يرجى الإرسال هكذا `36.34,43.13`:")
-        return LOCATION
+    user_input = update.message.text.strip()
+    
+    # معالجة فورية للموقع محلياً من القاموس الداخلي الصغير دون استهلاك أي ريسورس
+    matched_city, lat, lon = local_geo.search_city(user_input)
+    logger.info(f"Local Mapping Triggered: User typed '{user_input}' -> Matched '{matched_city}' ({lat}, {lon})")
 
     dt_utc = datetime(
         context.user_data['year'],
@@ -356,7 +402,7 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['minute']
     )
     
-    await update.message.reply_text("⏳ جاري استخراج وحساب البيانات والمواضع الفلكية الحقيقية...")
+    status_msg = await update.message.reply_text("⏳ جاري استخراج وحساب البيانات والمواضع الفلكية الحقيقية...")
 
     try:
         chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
@@ -373,6 +419,9 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
+        # حقن اسم المدينة التي تم رصدها بدقة في مقدمة الرسالة التفاعلية المخصصة
+        summary_msg = f"🗺 **المدينة المسجلة في الحساب الفلكي:** {matched_city}\n\n" + summary_msg
+
         keyboard = [
             [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
             [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
@@ -380,6 +429,7 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        await status_msg.delete() # حذف رسالة الانتظار وعرض النتيجة فوراً لتجربة مستخدم سريعة جداً
         await update.message.reply_text(summary_msg, reply_markup=reply_markup, parse_mode="Markdown")
 
     except Exception as e:
@@ -549,6 +599,4 @@ conv_handler = ConversationHandler(
 
 telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
-
-# التعديل الهام هنا: تم تمرير Regex Pattern واضح لتجنب اعتراض الـ go_astrology من المحادثة
 telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology)$).*"))
