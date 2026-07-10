@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any, List
 
 from fastapi import FastAPI, Request, Response
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, enums
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode  # التصحيح هنا: استيراد مود البارس الصحيح مباشرة
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -51,7 +52,7 @@ class AstrologySynthesisEngine:
         self.json_path = json_path
         self.interpretations = self.load_interpretations()
         self.connectors = [
-            " يتكامل هذا التموقع بعمق مع وجوده في ",
+            " يتكامل this التموقع بعمق مع وجوده في ",
             "، الأمر الذي ينعكس بشكل مباشر على شؤون ",
             "، مما يمنح طاقة هذا الكوكب تجسيداً عملياً داخل ",
             " ليصبح مسرحاً رئيسياً لـ "
@@ -437,29 +438,23 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         elif query.data == "menu_full_chart":
             await query.answer("جاري استخلاص وقراءة موازين الخريطة الفلكية لوضع المحترفين...")
             
-            # بناء قاموس ديناميكي متوافق مع المحرك من كائن الخريطة الفلكية الفعلي لتفادي الأخطاء الهيكلية
             raw_planets = getattr(chart_data, 'planets', {})
             birth_map_data = {}
             for p_name, p_data in raw_planets.items():
                 birth_map_data[p_name] = getattr(p_data, 'sign', 'Aries')
                 birth_map_data[f"{p_name}_house"] = str(getattr(p_data, 'house', '1'))
             
-            # استدعاء ومعالجة التقرير عبر المحرك المطور
             synthesis_engine = AstrologySynthesisEngine()
             chunks = synthesis_engine.synthesize_astrology_report(birth_map_data)
             
             user_id = query.from_user.id
             
-            # إرسال الرسائل بشكل تتابعي متصل لحل مشكلة عدم عمل الزر نهائياً وسقوط النصوص الطويلة
             for i, chunk in enumerate(chunks):
                 if i == 0:
-                    # تعديل أول رسالة لإظهار التقرير بدلاً من القائمة
-                    await query.edit_message_text(chunk, parse_mode=enums.ParseMode.MARKDOWN)
+                    await query.edit_message_text(chunk, parse_mode=ParseMode.MARKDOWN)
                 else:
-                    # إرسال بقية الأجزاء كرسائل تالية متتابعة تفادياً للـ Limit
-                    await telegram_app.bot.send_message(chat_id=user_id, text=chunk, parse_mode=enums.ParseMode.MARKDOWN)
+                    await telegram_app.bot.send_message(chat_id=user_id, text=chunk, parse_mode=ParseMode.MARKDOWN)
                     
-            # إلحاق زر العودة بالرسالة الأخيرة ليتمكن المستخدم من الرجوع
             await telegram_app.bot.send_message(
                 chat_id=user_id,
                 text="✨ **انتهى تقرير المحترفين الشامل.** يمكنك الآن العودة للقائمة الرئيسية:",
