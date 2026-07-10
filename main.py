@@ -8,6 +8,10 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List
 
+# استيراد مكتبة الاتصال بقاعدة بيانات PostgreSQL
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 from fastapi import FastAPI, Request, Response
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode  
@@ -47,46 +51,91 @@ telegram_app = Application.builder().token(TOKEN).build()
 
 
 # =====================================================================
-# محرك حفظ واستدعاء بيانات ملفات المستخدمين (تجنب السؤال المتكرر)
+# محرك حفظ واستدعاء بيانات ملفات المستخدمين (PostgreSQL السحابية)
 # =====================================================================
 class UsersDatabaseEngine:
-    def __init__(self, file_path: str = "users_db.json"):
-        self.file_path = file_path
-        self.db = self._load_db()
+    def __init__(self):
+        # جلب رابط الاتصال الكامل من متغيرات بيئة Railway أو استخدام البيانات الافتراضية للمضيف الموفر
+        self.db_url = os.getenv("DATABASE_URL", "postgresql://postgres:railway@Yamabiko.proxy.rlwy.net:5432/railway")
+        self._init_db()
 
-    def _load_db(self) -> Dict[str, Any]:
-        try:
-            if os.path.exists(self.file_path):
-                with open(self.file_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            return {}
-        except Exception as e:
-            logger.error(f"Error loading users_db.json: {e}")
-            return {}
+    def _get_connection(self):
+        """إنشاء اتصال جديد بقاعدة البيانات السحابية"""
+        return psycopg2.connect(self.db_url)
 
-    def _save_db(self):
+    def _init_db(self):
+        """إنشاء الجدول المخصص للمستخدمين داخل قاعدة البيانات الحية إذا لم يكن موجوداً"""
+        conn = None
         try:
-            with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(self.db, f, ensure_ascii=False, indent=4)
+            conn = self._get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_profiles (
+                        user_id BIGINT PRIMARY KEY,
+                        profile_data TEXT NOT NULL
+                    );
+                """)
+                conn.commit()
+                logger.info("✅ PostgreSQL database tables initialized successfully.")
         except Exception as e:
-            logger.error(f"Error saving users_db.json: {e}")
+            logger.error(f"Error initializing PostgreSQL Database: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def get_user_profile(self, user_id: int) -> Dict[str, Any]:
-        """استرجاع بيانات المستخدم إذا كانت موجودة مسبقاً"""
-        return self.db.get(str(user_id))
+        """استرجاع بيانات المستخدم السحابية إذا كانت موجودة مسبقاً"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT profile_data FROM user_profiles WHERE user_id = %s;", (user_id,))
+                row = cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+            return {}
+        except Exception as e:
+            logger.error(f"Error loading user profile from DB: {e}")
+            return {}
+        finally:
+            if conn:
+                conn.close()
 
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
-        """حفظ ملف بيانات الولادة الخاص بالمستخدم"""
-        self.db[str(user_id)] = profile_data
-        self._save_db()
+        """حفظ أو تحديث ملف بيانات الولادة الخاص بالمستخدم في السيرفر السحابي"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            with conn.cursor() as cursor:
+                json_data = json.dumps(profile_data, ensure_ascii=False)
+                cursor.execute("""
+                    INSERT INTO user_profiles (user_id, profile_data) 
+                    VALUES (%s, %s)
+                    ON CONFLICT (user_id) 
+                    DO UPDATE SET profile_data = EXCLUDED.profile_data;
+                """, (user_id, json_data))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving user profile to DB: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def delete_user_profile(self, user_id: int):
         """حذف البيانات لتمكين المستخدم من تعديل ميلاده"""
-        if str(user_id) in self.db:
-            del self.db[str(user_id)]
-            self._save_db()
+        conn = None
+        try:
+            conn = self._get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM user_profiles WHERE user_id = %s;", (user_id,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error deleting user profile from DB: {e}")
+        finally:
+            if conn:
+                conn.close()
 
-# تهيئة قاعدة بيانات المستخدمين عالمياً
+# تهيئة قاعدة بيانات المستخدمين عالمياً بربط PostgreSQL الجديد
 users_db = UsersDatabaseEngine()
 
 
@@ -318,7 +367,7 @@ async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAU
     user_id = query.from_user.id
     await query.answer() 
     
-    # محاولة جلب بروفايل المستخدم المخزن مسبقاً
+    # محاولة جلب بروفايل المستخدم المخزن مسبقاً من قاعدة البيانات السحابية
     saved_profile = users_db.get_user_profile(user_id)
     
     if saved_profile:
@@ -409,9 +458,9 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "lon": lon
     }
     
-    # الحفظ التلقائي الفوري في ملف التخزين المحلي
+    # الحفظ التلقائي الفوري في قاعدة البيانات السحابية PostgreSQL
     users_db.save_user_profile(user_id, profile_to_save)
-    logger.info(f"Saved new user profile for ID {user_id}")
+    logger.info(f"Saved new user profile to PostgreSQL for ID {user_id}")
 
     # معالجة وعرض التقرير
     await process_and_send_astrology_report(
@@ -445,7 +494,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     elif data == "reset_my_birthdata":
-        # حذف البروفايل لتمكينه من إعادة التسجيل مجدداً
+        # حذف البروفايل من قاعدة البيانات السحابية لتمكينه من إعادة التسجيل مجدداً
         await query.answer("جاري مسح بياناتك السابقة لإعادة تعيينها...")
         users_db.delete_user_profile(user_id)
         context.user_data.clear()
@@ -517,7 +566,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ])
 
     if not chart_data and data.startswith("menu_"):
-        # في حال انتهت الجلسة المؤقتة في الـ RAM لكن المستخدم محفوظ في الـ DB
+        # في حال انتهت الجلسة المؤقتة في الـ RAM لكن المستخدم محفوظ في الـ DB السحابية
         saved_profile = users_db.get_user_profile(user_id)
         if saved_profile:
             dt_utc = datetime(saved_profile['year'], saved_profile['month'], saved_profile['day'], saved_profile['hour'], saved_profile['minute'])
