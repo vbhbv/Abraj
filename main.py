@@ -47,11 +47,54 @@ telegram_app = Application.builder().token(TOKEN).build()
 
 
 # =====================================================================
-# محرك تحديد المواقع المحلي (مجاني، فوري، ولا يستهلك موارد)
+# محرك حفظ واستدعاء بيانات ملفات المستخدمين (تجنب السؤال المتكرر)
+# =====================================================================
+class UsersDatabaseEngine:
+    def __init__(self, file_path: str = "users_db.json"):
+        self.file_path = file_path
+        self.db = self._load_db()
+
+    def _load_db(self) -> Dict[str, Any]:
+        try:
+            if os.path.exists(self.file_path):
+                with open(self.file_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            return {}
+        except Exception as e:
+            logger.error(f"Error loading users_db.json: {e}")
+            return {}
+
+    def _save_db(self):
+        try:
+            with open(self.file_path, "w", encoding="utf-8") as f:
+                json.dump(self.db, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving users_db.json: {e}")
+
+    def get_user_profile(self, user_id: int) -> Dict[str, Any]:
+        """استرجاع بيانات المستخدم إذا كانت موجودة مسبقاً"""
+        return self.db.get(str(user_id))
+
+    def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
+        """حفظ ملف بيانات الولادة الخاص بالمستخدم"""
+        self.db[str(user_id)] = profile_data
+        self._save_db()
+
+    def delete_user_profile(self, user_id: int):
+        """حذف البيانات لتمكين المستخدم من تعديل ميلاده"""
+        if str(user_id) in self.db:
+            del self.db[str(user_id)]
+            self._save_db()
+
+# تهيئة قاعدة بيانات المستخدمين عالمياً
+users_db = UsersDatabaseEngine()
+
+
+# =====================================================================
+# محرك تحديد المواقع المحلي الثابت 
 # =====================================================================
 class LocalGeocodingEngine:
     def __init__(self):
-        # قاموس مسبق الإعداد لأهم المدن والمحافظات العربية والعالمية (يمكنك التوسيع فيه بسهولة)
         self.city_db = {
             # العراق
             "بغداد": (33.3152, 44.3661), "الموصل": (36.3400, 43.1300), "البصرة": (30.5081, 47.7835),
@@ -76,27 +119,66 @@ class LocalGeocodingEngine:
             "طرابلس": (32.8872, 13.1913), "تونس": (36.8065, 10.1815), "الجزائر": (36.7525, 3.0420),
             "الرباط": (34.0209, -6.8416), "الدار البيضاء": (33.5731, -7.5898), "نواكشوط": (18.0735, -15.9582)
         }
-        
-        # إحداثيات افتراضية في حال لم يتعرف البوت على النص المدخل (توضع العاصمة كمركز رئيسي)
-        self.default_coords = (33.3152, 44.3661) # بغداد كخيار افتراضي سلس
+        self.default_coords = (33.3152, 44.3661) 
         
     def search_city(self, input_text: str) -> tuple:
-        # تنظيف النص لزيادة دقة البحث المحلي
         clean_name = input_text.strip().replace("ة", "ه").replace("أ", "ا").replace("إ", "ا")
-        
         for city, coords in self.city_db.items():
             clean_city = city.replace("ة", "ه").replace("أ", "ا").replace("إ", "ا")
             if clean_city in clean_name or clean_name in clean_city:
                 return city, coords[0], coords[1]
-                
         return "بغداد (افتراضي)", self.default_coords[0], self.default_coords[1]
 
-# تهيئة المحرك عالمياً
 local_geo = LocalGeocodingEngine()
 
 
 # =====================================================================
-# محرك الخيرة الرقمية المرتبط بملف khira_data.json ونظام منع التكرار
+# دالة معالجة الحساب والتحليل المشتركة (تُستدعى للحفظ الجديد أو القديم)
+# =====================================================================
+async def process_and_send_astrology_report(chat_id: int, user_data: dict, matched_city: str, lat: float, lon: float, update_context_user_data: dict):
+    dt_utc = datetime(
+        user_data['year'],
+        user_data['month'],
+        user_data['day'],
+        user_data['hour'],
+        user_data['minute']
+    )
+    
+    try:
+        chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
+        facts = [] 
+        score_data = RulesEngine.evaluate(facts)
+        total_score = score_data.total_score 
+
+        # حفظ النتيجة في جلسة المحادثة المؤقتة لتشغيل الأزرار اللاحقة (التقرير الكامل، الصورة)
+        update_context_user_data['last_chart'] = chart_data
+        update_context_user_data['last_score'] = total_score
+        update_context_user_data['lat'] = lat
+        update_context_user_data['lon'] = lon
+
+        summary_msg = interpreter.get_minimal_summary(chart_data)
+        score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
+        summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
+        
+        summary_msg = f"🗺 **المدينة المعتمدة للحساب:** {matched_city}\n\n" + summary_msg
+
+        keyboard = [
+            [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
+            [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
+            [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
+            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await telegram_app.bot.send_message(chat_id=chat_id, text=summary_msg, reply_markup=reply_markup, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Error during calculations: {e}", exc_info=True)
+        await telegram_app.bot.send_message(chat_id=chat_id, text="❌ عذراً، حدث خطأ أثناء معالجة البيانات الفلكية داخلياً.")
+
+
+# =====================================================================
+# محرك الخيرة الرقمية 
 # =====================================================================
 class KhiraEngine:
     def __init__(self, json_path: str = "khira_data.json"):
@@ -110,11 +192,9 @@ class KhiraEngine:
             if os.path.exists(self.json_path):
                 with open(self.json_path, "r", encoding="utf-8") as f:
                     return json.load(f)
-            else:
-                logger.warning(f"⚠️ الملف {self.json_path} غير موجود، تم اعتماد هيكل افتراضي.")
-                return {"good": [], "medium": [], "bad": []}
+            return {"good": [], "medium": [], "bad": []}
         except Exception as e:
-            logger.error(f"Error loading Khira JSON file: {e}")
+            logger.error(f"Error loading Khira JSON: {e}")
             return {"good": [], "medium": [], "bad": []}
 
     def check_cooldown(self, user_id: int) -> int:
@@ -129,11 +209,9 @@ class KhiraEngine:
         categories = ["good", "medium", "bad"]
         weights = [0.50, 0.30, 0.20]
         chosen_category = random.choices(categories, weights=weights, k=1)[0]
-        
         options_list = self.khira_data.get(chosen_category, [])
         if not options_list:
             return {}
-            
         self.cooldowns[user_id] = time.time()
         return random.choice(options_list)
 
@@ -149,130 +227,8 @@ khira_engine = KhiraEngine()
 
 
 # =====================================================================
-# محرك التحليل الفلكي التركيبي الذكي 
+# تهيئة الـ Webhook و FastAPI
 # =====================================================================
-class AstrologySynthesisEngine:
-    def __init__(self, json_path: str = "interpretations.json"):
-        self.json_path = json_path
-        self.interpretations = self.load_interpretations()
-        self.connectors = [
-            " يتكامل this التموقع بعمق مع وجوده في ",
-            "، الأمر الذي ينعكس بشكل مباشر على شؤون ",
-            "، مما يمنح طاقة this الكوكب تجسيداً عملياً داخل ",
-            " ليصبح مسرحاً رئيسياً لـ "
-        ]
-
-    def load_interpretations(self) -> Dict[str, Any]:
-        try:
-            with open(self.json_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading JSON file: {e}")
-            return {}
-
-    def calculate_element_balance(self, birth_data: Dict[str, str]) -> str:
-        elements = {"نارية": 0, "ترابية": 0, "هوائية": 0, "مائية": 0}
-        element_mapping = {
-            "Aries": "نارية", "Leo": "نارية", "Sagittarius": "نارية",
-            "Taurus": "ترابية", "Virgo": "ترابية", "Capricorn": "ترابية",
-            "Gemini": "هوائية", "Libra": "هوائية", "Aquarius": "هوائية",
-            "Cancer": "مائية", "Scorpio": "مائية", "Pisces": "مائية"
-        }
-        
-        for planet in ["Sun", "Moon", "Mercury", "Venus", "Mars"]:
-            sign = birth_data.get(planet)
-            if sign in element_mapping:
-                elements[element_mapping[sign]] += 1
-                
-        dominant_element = max(elements, key=elements.get)
-        balance_reports = {
-            "نارية": "🔥 تفوح خريطتك بطاقة نارية دافقة، مما يمنحك روحاً مبادرة، حماساً اشتعالياً، ورغبة مستمرة في قيادة واقعك وتحدي الركود.",
-            "ترابية": "🪵 تهيمن العناصر الترابية على بنيتك الفلكية، مما يجعلك شخصاً شديد الواقعية، يبحث عن الأمان الملموس، ويتقن الصبر وبناء الاستقرار طويل الأمد.",
-            "هوائية": "💨 طغيان الطابع الهوائي يمنحك عقلاً حاداً، وفضولاً معرفياً لا يهدأ، حيث تتنفس عبر الأفكار، التواصل، والتحليل المستمر للمحيط.",
-            "مائية": "💧 الغلبة هنا للعنصر المائي؛ أنت تسبح في عالم من الحدس، المشاعر العميقة، والامتصاص النفسي لطاقات الآخرين، مما يمنحك بصيرة شفائية استثنائية."
-        }
-        return balance_reports.get(dominant_element, "")
-
-    def detect_psychological_conflicts(self, birth_data: Dict[str, str]) -> List[str]:
-        conflicts = []
-        sun = birth_data.get("Sun")
-        moon = birth_data.get("Moon")
-        
-        if sun == "Leo" and moon in ["Virgo", "Cancer", "Scorpio"]:
-            conflicts.append(
-                "🔄 **تناقض الهوية الداخلي:** تختبر صراعاً صامتاً بين شمسك في الأسد التي تعشق التقدير والظهور، وبين قمرك الباطني الذي يميل للتحفظ، الخصوصية، والتحليل خلف الكواليس."
-            )
-        if sun == "Aries" and moon == "Libra":
-            conflicts.append(
-                "🔄 **محور المواجهة والسلام:** روحك ممزقة بين رغبة شمسك في الحسم والمواجهة الشجاعة المباشرة، وبين حاجة قمرك في الميزان للمداراة، الدبلوماسية، والحفاظ على السلم مع الآخرين بأي ثمن."
-            )
-        return conflicts
-
-    def synthesize_astrology_report(self, birth_data: Dict[str, str]) -> List[str]:
-        messages_to_send = []
-        header = "🔮 **التحليل الفلكي التركيبي للمحترفين** 🔮\n\n"
-        header += self.calculate_element_balance(birth_data) + "\n\n"
-        
-        conflicts = self.detect_psychological_conflicts(birth_data)
-        if conflicts:
-            header += "⚠️ **رادار البصيرة الفلكية (التناقضات المكتشفة):**\n" + "\n".join(conflicts) + "\n\n"
-            
-        header += "📌 **التشريح التفصيلي للمواضع الفلكية:**\n"
-        current_chunk = header
-        
-        for planet, sign in birth_data.items():
-            if planet in ["house_1", "house_2"] or "_house" in planet:
-                continue
-                
-            house = birth_data.get(f"{planet}_house", "1")
-            sign_text = self.interpretations.get(planet, {}).get(sign, "")
-            house_text = self.interpretations.get(planet, {}).get(str(house), "")
-            
-            if sign_text and house_text:
-                combined_analysis = f"🪐 **{planet} في {sign} داخل البيت {house}:**\n{sign_text}{self.connectors[1]}{house}\n↳ *العمق الاستراتيجي:* {house_text}\n\n"
-                
-                if len(current_chunk) + len(combined_analysis) > 3500:
-                    messages_to_send.append(current_chunk)
-                    current_chunk = combined_analysis
-                else:
-                    current_chunk += combined_analysis
-                    
-        if current_chunk:
-            messages_to_send.append(current_chunk)
-            
-        return messages_to_send
-
-
-class FlexibleChartAdapter:
-    def __init__(self, raw_chart: Any):
-        self.ascendant = getattr(raw_chart, 'ascendant', 'Aries')
-        self.ascendant_degree = getattr(raw_chart, 'ascendant_degree', 0.0)
-        self.midheaven_degree = getattr(raw_chart, 'midheaven_degree', 270.0)
-        self.houses = getattr(raw_chart, 'houses', {})
-        
-        self.planets = {}
-        raw_planets = getattr(raw_chart, 'planets', {})
-        for p_name, p_data in raw_planets.items():
-            class PlanetAdapter:
-                def __init__(self, data):
-                    self.longitude = getattr(data, 'longitude', getattr(data, 'abs_degree', getattr(data, 'degree', 0.0)))
-            self.planets[p_name] = PlanetAdapter(p_data)
-            
-        self.aspects = []
-        raw_aspects = getattr(raw_chart, 'aspects', [])
-        for aspect in raw_aspects:
-            class AspectAdapter:
-                def __init__(self, asp):
-                    self.p1 = getattr(asp, 'p1', getattr(asp, 'planet1', getattr(asp, 'p1_name', None)))
-                    self.p2 = getattr(asp, 'p2', getattr(asp, 'planet2', getattr(asp, 'p2_name', None)))
-                    self.type = getattr(asp, 'type', getattr(asp, 'aspect_type', 'Conjunction'))
-                    self.orb = getattr(asp, 'orb', 0.0)
-            
-            adapted_asp = AspectAdapter(aspect)
-            if adapted_asp.p1 and adapted_asp.p2:
-                self.aspects.append(adapted_asp)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await telegram_app.initialize()
@@ -298,7 +254,7 @@ async def root_handler():
 
 
 # =====================================================================
-# منطق معالجة القائمة الرئيسية وأمر /start المحدث
+# منطق معالجة القائمة الرئيسية وأمر /start
 # =====================================================================
 def get_start_keyboard():
     return InlineKeyboardMarkup([
@@ -327,13 +283,32 @@ async def khira_start_from_menu(query: Update.callback_query, context: ContextTy
     await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
 
+# --- فحص التخزين المسبق عند ضغط زر الأبراج ---
 async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer() 
     
+    # محاولة جلب بروفايل المستخدم المخزن مسبقاً
+    saved_profile = users_db.get_user_profile(user_id)
+    
+    if saved_profile:
+        # إذا وجدنا بيانات مخزنة، نقوم بالحساب فوراً ونتجاوز استمارة الأسئلة
+        await query.edit_message_text("✨ تم العثور على بيانات ميلادك المسجلة سابقاً! جاري استخراج خريطتك الحية فوراً...")
+        await process_and_send_astrology_report(
+            chat_id=user_id,
+            user_data=saved_profile,
+            matched_city=saved_profile['city'],
+            lat=saved_profile['lat'],
+            lon=saved_profile['lon'],
+            update_context_user_data=context.user_data
+        )
+        return ConversationHandler.END
+    
+    # إذا لم توجد بيانات، تبدأ استمارة الأسئلة المعتادة لأول مرة فقط
     await query.edit_message_text(
         "🔮 **نظام التحليل الفلكي الشامل**\n\n"
-        "سنقوم بإعداد خريطتك الشخصية العميقة واستخراج ملامحك الفلكية بدقة.\n"
+        "يبدو أنك تستخدم النظام لأول مرة. سنقوم بحفظ بياناتك بعد إدخالها الآن حتى لا تسأل عنها مجدداً.\n\n"
         "ابدأ بإرسال **سنة ميلادك** بالأرقام (مثال: `1998`):"
     )
     return YEAR
@@ -389,58 +364,41 @@ async def p_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_input = update.message.text.strip()
+    user_id = update.message.from_user.id
     
-    # معالجة فورية للموقع محلياً من القاموس الداخلي الصغير دون استهلاك أي ريسورس
     matched_city, lat, lon = local_geo.search_city(user_input)
-    logger.info(f"Local Mapping Triggered: User typed '{user_input}' -> Matched '{matched_city}' ({lat}, {lon})")
 
-    dt_utc = datetime(
-        context.user_data['year'],
-        context.user_data['month'],
-        context.user_data['day'],
-        context.user_data['hour'],
-        context.user_data['minute']
-    )
+    # هيكلة ملف البيانات لحفظه للمستخدم بشكل دائم
+    profile_to_save = {
+        "year": context.user_data['year'],
+        "month": context.user_data['month'],
+        "day": context.user_data['day'],
+        "hour": context.user_data['hour'],
+        "minute": context.user_data['minute'],
+        "city": matched_city,
+        "lat": lat,
+        "lon": lon
+    }
     
-    status_msg = await update.message.reply_text("⏳ جاري استخراج وحساب البيانات والمواضع الفلكية الحقيقية...")
+    # الحفظ التلقائي الفوري في ملف التخزين المحلي
+    users_db.save_user_profile(user_id, profile_to_save)
+    logger.info(f"Saved new user profile for ID {user_id}")
 
-    try:
-        chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
-        facts = [] 
-        score_data = RulesEngine.evaluate(facts)
-        total_score = score_data.total_score 
-
-        context.user_data['last_chart'] = chart_data
-        context.user_data['last_score'] = total_score
-        context.user_data['lat'] = lat
-        context.user_data['lon'] = lon
-
-        summary_msg = interpreter.get_minimal_summary(chart_data)
-        score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
-        summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
-        
-        # حقن اسم المدينة التي تم رصدها بدقة في مقدمة الرسالة التفاعلية المخصصة
-        summary_msg = f"🗺 **المدينة المسجلة في الحساب الفلكي:** {matched_city}\n\n" + summary_msg
-
-        keyboard = [
-            [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
-            [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
-            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await status_msg.delete() # حذف رسالة الانتظار وعرض النتيجة فوراً لتجربة مستخدم سريعة جداً
-        await update.message.reply_text(summary_msg, reply_markup=reply_markup, parse_mode="Markdown")
-
-    except Exception as e:
-        logger.error(f"Error during calculations: {e}", exc_info=True)
-        await update.message.reply_text("❌ عذراً، حدث خطأ أثناء معالجة البيانات الفلكية داخلياً.")
+    # معالجة وعرض التقرير
+    await process_and_send_astrology_report(
+        chat_id=user_id,
+        user_data=context.user_data,
+        matched_city=matched_city,
+        lat=lat,
+        lon=lon,
+        update_context_user_data=context.user_data
+    )
 
     return ConversationHandler.END
 
 
 # =====================================================================
-# معالج ضغطات الأزرار الموحد والمختصر بالكامل
+# معالج ضغطات الأزرار الموحد (مع إضافة خيار تعديل وحذف البيانات)
 # =====================================================================
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -457,6 +415,18 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(welcome_text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.MARKDOWN)
         return
 
+    elif data == "reset_my_birthdata":
+        # حذف البروفايل لتمكينه من إعادة التسجيل مجدداً
+        await query.answer("جاري مسح بياناتك السابقة لإعادة تعيينها...")
+        users_db.delete_user_profile(user_id)
+        context.user_data.clear()
+        await query.edit_message_text(
+            "🗑 تم مسح بيانات ميلادك السابقة بنجاح.\n"
+            "يرجى الضغط على **قسم الأبراج والفلك** مجدداً من القائمة الرئيسية لإدخال البيانات الجديدة.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]])
+        )
+        return
+
     elif data == "go_khira" or data == "khira_back":
         await query.answer()
         await khira_start_from_menu(query, context)
@@ -465,15 +435,12 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif data == "khira_request":
         remaining = khira_engine.check_cooldown(user_id)
         if remaining > 0:
-            await query.answer(
-                f"⚠️ لا يمكن تكرار الخيرة في نفس الأمر هكذا!\nانتظر {remaining} دقيقة أو تدبر في نتيجتك الحالية أولاً.",
-                show_alert=True
-            )
+            await query.answer(f"⚠️ انتظر {remaining} دقيقة أو تدبر في نتيجتك الحالية أولاً.", show_alert=True)
             return
 
         chosen = khira_engine.get_random_khira(user_id)
         if not chosen:
-            await query.answer("عذراً، لم يتم العثور على نصوص كافية داخل ملف khira_data.json", show_alert=True)
+            await query.answer("عذراً، لم يتم العثور على نصوص كافية.", show_alert=True)
             return
 
         await query.answer("جاري سحب نتيجتك الآن...")
@@ -504,9 +471,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "📜 **آداب وشروط عمل الخيرة:**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "1️⃣ **النية الصادقة:** أن تكون حائراً فعلاً بين أمرين ولم تصل لقرار حاسم بعد الاستشارة والتدبر.\n"
-            "2️⃣ **عدم التكرار:** لا تُكرر الخيرة في نفس الأمر إطلاقاً ما لم تتغير ظروف القضية جذرياً.\n"
-            "3️⃣ **الرضا بالنتيجة:** تسليم الأمر لله تعالى والعمل بموجب التوجيه الصاعد بقلب مطمئن.\n"
-            "4️⃣ **الطهارة والتوجه:** يُفضل استحضار النية والوضوء متوجهاً للقبلة المشرفة أثناء طلب الخيرة."
+            "2️⃣ **عدم التكرار:** لا تُكرر الخيرة في نفس الأمر إطلاقاً.\n"
+            "3️⃣ **الرضا بالنتيجة:** تسليم الأمر لله تعالى والعمل بموجب التوجيه الصاعد بقلب مطمئن."
         )
         back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]])
         await query.edit_message_text(rules_text, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN)
@@ -517,18 +483,25 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     astrology_back_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
         [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
+        [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
         [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
     ])
 
     if not chart_data and data.startswith("menu_"):
-        await query.answer()
-        await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك أعد إدخال البيانات.")
-        return
+        # في حال انتهت الجلسة المؤقتة في الـ RAM لكن المستخدم محفوظ في الـ DB
+        saved_profile = users_db.get_user_profile(user_id)
+        if saved_profile:
+            dt_utc = datetime(saved_profile['year'], saved_profile['month'], saved_profile['day'], saved_profile['hour'], saved_profile['minute'])
+            chart_data = engine.compute_natal_chart(dt_utc, saved_profile['lat'], saved_profile['lon'])
+            context.user_data['last_chart'] = chart_data
+        else:
+            await query.answer()
+            await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك اضغط على قسم الأبراج مجدداً لبدء الحساب تلقائياً.")
+            return
 
     try:
         if data == "menu_read_all":
-            await query.answer("جاري استخلاص وتحليل كافة المؤشرات الفلكية المتقدمة...")
-            
+            await query.answer("جاري تحليل كافة المؤشرات المتقدمة...")
             full_report = interpreter.get_detailed_report(chart_data)
             asc_sign = getattr(chart_data, 'ascendant', 'غير معروف')
             
@@ -553,27 +526,40 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await query.edit_message_text(complete_analysis, reply_markup=astrology_back_markup, parse_mode="Markdown")
 
         elif data == "menu_generate_image":
-            await query.answer("جاري رسم وتوليد خريطتك الفلكية هندسياً الحية...")
+            await query.answer("جاري رسم خريطتك الفلكية الحية...")
             try:
+                class FlexibleChartAdapter:
+                    def __init__(self, raw_chart):
+                        self.ascendant = getattr(raw_chart, 'ascendant', 'Aries')
+                        self.ascendant_degree = getattr(raw_chart, 'ascendant_degree', 0.0)
+                        self.midheaven_degree = getattr(raw_chart, 'midheaven_degree', 270.0)
+                        self.houses = getattr(raw_chart, 'houses', {})
+                        self.planets = {}
+                        raw_planets = getattr(raw_chart, 'planets', {})
+                        for p_name, p_data in raw_planets.items():
+                            class PlanetAdapter:
+                                def __init__(self, d):
+                                    self.longitude = getattr(d, 'longitude', getattr(d, 'abs_degree', getattr(d, 'degree', 0.0)))
+                            self.planets[p_name] = PlanetAdapter(p_data)
+                        self.aspects = []
+
                 adapted_chart = FlexibleChartAdapter(chart_data)
                 img_bytes_data = drawer.generate_chart_png(adapted_chart)
-                
                 img_buffer = io.BytesIO(img_bytes_data)
                 img_buffer.name = "natal_chart.png"
                 
                 await telegram_app.bot.send_photo(
                     chat_id=user_id,
                     photo=img_buffer,
-                    caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم توليد الرسم البياني بناءً على طلبك الآن اعتماداً على درجات أجرامك وأوتادك الحقيقية.",
+                    caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم توليد الرسم البياني بناءً على درجات أجرامك المحفوظة.",
                     reply_markup=astrology_back_markup
                 )
             except Exception as draw_err:
-                logger.error(f"Error during manual chart drawing: {draw_err}", exc_info=True)
-                await query.message.reply_text("⚠️ تعذر توليد ورسم الصورة حالياً، يرجى مراجعة التقرير النصي.", reply_markup=astrology_back_markup)
+                logger.error(f"Error drawing chart: {draw_err}")
+                await query.message.reply_text("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي.", reply_markup=astrology_back_markup)
 
     except Exception as exc:
-        logger.error(f"Error handling menu click {data}: {exc}", exc_info=True)
-        await query.message.reply_text("⚠️ حدث خطأ داخلي أثناء استخلاص البيانات الفلكية.", reply_markup=astrology_back_markup)
+        logger.error(f"Error handling click: {exc}")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🚫 تم إلغاء العملية الحالية. يمكنك البدء من جديد بإرسال /start")
@@ -581,7 +567,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # =====================================================================
-# تسجيل ومعالجة الـ Handlers للـ Conversation والأزرار
+# تسجيل الـ Handlers للـ Conversation والأزرار
 # =====================================================================
 conv_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(astrology_trigger_workflow, pattern="^go_astrology$")],
