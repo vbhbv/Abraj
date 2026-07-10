@@ -63,6 +63,7 @@ class UsersDatabaseEngine:
 
     def _get_connection(self):
         """إنشاء اتصال جديد بقاعدة البيانات السحابية"""
+        # تعديل: تمرير قيمة المتغير الحقيقية بدلاً من النص "self.db_url"
         return psycopg2.connect(self.db_url)
 
     def _init_db(self):
@@ -168,7 +169,7 @@ class LocalGeocodingEngine:
             "دمشق": (33.5138, 36.2765), "حلب": (36.2021, 37.1343), "بيروت": (33.8938, 35.5018),
             "عمان": (31.9454, 35.9284), "صنعاء": (15.3694, 44.1910), "الخرطوم": (15.5007, 32.5599),
             "طرابلس": (32.8872, 13.1913), "تونس": (36.8065, 10.1815), "الجزائر": (36.7525, 3.0420),
-            "الرباط": (34.0209, -6.8416), "الدار البيضاء": (33.5731, -7.5898), "نواکشوط": (18.0735, -15.9582)
+            "الرباط": (34.0209, -6.8416), "الدار البيضاء": (33.5731, -7.5898), "نواكشوط": (18.0735, -15.9582)
         }
         self.default_coords = (33.3152, 44.3661) 
         
@@ -207,16 +208,20 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         sun_sign = getattr(sun_data, 'sign', 'Gemini') if sun_data else 'Gemini'
         moon_sign = getattr(moon_data, 'sign', 'Leo') if moon_data else 'Leo'
         
-        # تغذية مصفوفة الحقائق بالبيانات الحية المستخرجة
+        # تعديل: بناء كائنات تحتوي على خاصية .code لإصلاح خطأ RulesEngine.evaluate
+        class FactObject:
+            def __init__(self, code_string):
+                self.code = code_string
+
         facts = [
-            f"ascendant_{asc_sign.lower()}",
-            f"sun_{sun_sign.lower()}",
-            f"moon_{moon_sign.lower()}"
+            FactObject(f"ascendant_{asc_sign.lower()}"),
+            FactObject(f"sun_{sun_sign.lower()}"),
+            FactObject(f"moon_{moon_sign.lower()}")
         ]
         
         # 3. تشغيل محرك القواعد وحساب النتيجة
         score_data = RulesEngine.evaluate(facts)
-        total_score = score_data.total_score 
+        total_score = getattr(score_data, 'total_score', 0) 
 
         # في حال عدم وجود تطابق حرفي بالقواعد ورجوع النتيجة بصفر، يتم حساب مؤشر بديل تفاعلي مبني على العناصر
         if total_score == 0:
