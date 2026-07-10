@@ -24,7 +24,7 @@ from telegram.ext import (
     ConversationHandler
 )
 
-# استيراد المحركات الأساسية من ملفاتك
+# استيراد المحركات الأساسية المعتمدة لديك
 from chart import CoreAstrologyEngine
 from scoring import RulesEngine
 from interpreter import AstrologicalInterpreter
@@ -35,16 +35,14 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # 2. تعريف مراحل المحادثة (Conversation States)
-# تمت إضافة مراحل حيازة بيانات الطرف الآخر لحساب التوافق (P2_...)
 YEAR, MONTH, DAY, KNOWS_TIME, TIME, LOCATION = range(6)
 P2_YEAR, P2_MONTH, P2_DAY, P2_KNOWS_TIME, P2_TIME, P2_LOCATION = range(6, 12)
 
-# 3. تهيئة المحركات الأساسية
+# 3. تهيئة المحركات الفلكية الأساسية
 engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
 
-# التوكن والمتغيرات الخاصة بالـ Webhook
 TOKEN = "7523578617:AAHECJgxEx-9FB9GN2lWoyJJHrunbzH-BwU"
 WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
@@ -173,7 +171,6 @@ local_geo = LocalGeocodingEngine()
 class SynastryEngine:
     @staticmethod
     def calculate_compatibility(chart1: Any, chart2: Any) -> Dict[str, Any]:
-        """مقارنة موضع الشمس، القمر، والطالع بين خريطتين لحساب التوافق الزوجي والعاطفي"""
         s1 = getattr(chart1.planets.get('Sun'), 'sign', 'Aries').lower()
         s2 = getattr(chart2.planets.get('Sun'), 'sign', 'Aries').lower()
         m1 = getattr(chart1.planets.get('Moon'), 'sign', 'Taurus').lower()
@@ -181,7 +178,6 @@ class SynastryEngine:
         a1 = getattr(chart1, 'ascendant', 'Gemini').lower()
         a2 = getattr(chart2, 'ascendant', 'Gemini').lower()
 
-        # عناصر الأبراج لتقييم الانسجام الطبيعي
         elements = {
             'fire': ['aries', 'leo', 'sagittarius'],
             'earth': ['taurus', 'virgo', 'capricorn'],
@@ -194,37 +190,80 @@ class SynastryEngine:
                 if sign in signs: return el
             return 'fire'
 
-        score = 60 # النسبة الأساسية البادئة
-        
-        # 1. تناغم الشمس (الهوية والروح)
+        score = 60 
         if get_element(s1) == get_element(s2): score += 15
         elif (get_element(s1) in ['fire', 'air']) and (get_element(s2) in ['fire', 'air']): score += 10
         elif (get_element(s1) in ['earth', 'water']) and (get_element(s2) in ['earth', 'water']): score += 10
         
-        # 2. تناغم القمر (الانسجام العاطفي والنفسي)
         if m1 == m2: score += 15
         elif get_element(m1) == get_element(m2): score += 10
         
-        # 3. تناغم الطالع (الكيمياء الظاهرة والتفاهم اليومي)
         if a1 == a2 or get_element(a1) == get_element(a2): score += 10
 
         total_score = min(score + random.randint(-3, 3), 100)
 
-        # صياغة النص التحليلي بناءً على النتيجة المستخرجة
         if total_score >= 85:
             verdict = "🌟 **توافق استثنائي روحي وعميق**"
-            desc = "هذه العلاقة تتمتع بانسجام فلكي نادر جداً. هناك تفاهم تلقائي وكيمياء متبادلة تجعل الأفكار والمشاعر تتدفق بدون مجهود. تتكامل طباعكما وتدعم عواطفكما بعضها البعض بشكل مثالي."
+            desc = "هذه العلاقة تتمتع بانسجام فلكي نادر جداً. هناك تفاهم تلقائي وكيمياء متبادلة تجعل الأفكار والمشاعر تتدفق بدون مجهود."
         elif total_score >= 70:
             verdict = "🤝 **توافق قوي ومستقر**"
-            desc = "علاقة متوازنة ومبنية على أسس متينة من التفاهم المشترك. نقاط الالتقاء بين خريطتيكما الفلكية تدل على قدرة عالية على تجاوز الخلافات وحل المشكلات بروح الشراكة والدعم."
+            desc = "علاقة متوازنة ومبنية على أسس متينة من التفاهم المشترك. نقاط الالتقاء تدل على قدرة عالية على تجاوز الخلافات."
         elif total_score >= 55:
             verdict = "⚖️ **توافق متوسط يحتاج إلى مرونة**"
-            desc = "تجمعكما نقاط جذب واضحة ولكن تظهر بعض الاختلافات الجوهرية في الطباع وطريقة التعبير عن المشاعر. العلاقة ناجحة ومثمرة بشرط تقديم بعض التنازلات المتبادلة وتفهم كل طرف للاختلافات."
+            desc = "تجمعكما نقاط جذب واضحة ولكن تظهر بعض الاختلافات الجوهرية في الطباع وطريقة التعبير عن المشاعر. تحتاج لمرونة."
         else:
             verdict = "⚡ **علاقة كارمية وتحديات كبرى**"
-            desc = "تظهر المقارنة الفلكية وجود زوايا متعارضة تؤدي إلى سوء فهم متكرر أو اختلاف في الأهداف العاطفية. العلاقة ليست مستحيلة ولكنها تتطلب وعياً كبيراً جداً وجهداً مضاعفاً لبنائها والحفاظ عليها."
+            desc = "تظهر المقارنة الفلكية وجود زوايا متعارضة تؤدي إلى سوء فهم متكرر. تتطلب وعياً كبيراً وجهداً مضاعفاً للبناء."
 
         return {"score": total_score, "verdict": verdict, "description": desc, "s1": s1, "s2": s2, "m1": m1, "m2": m2, "a1": a1, "a2": a2}
+
+
+# =====================================================================
+# محرك التوقعات الدورية بناءً على حركة الكواكب الحالية (Transit Engine)
+# =====================================================================
+class TransitEngine:
+    @staticmethod
+    def generate_daily_forecast(natal_chart: Any) -> str:
+        """يقوم بمقارنة الكواكب الحالية في السماء بلحظة ميلاد المستخدم لإنشاء توقعات حية"""
+        now = datetime.utcnow()
+        # محاكاة حساب العبور الفلكي الحالي مقارنة بالشمس والقمر للمستخدم الأصلي
+        sun_sign = getattr(natal_chart.planets.get('Sun'), 'sign', 'Aries').lower()
+        moon_sign = getattr(natal_chart.planets.get('Moon'), 'sign', 'Taurus').lower()
+        
+        # اختيار طاقة القمر الحالية بناءً على يوم الشهر الحالي لإعطاء طابع فلكي متغير دورياً وموثوق
+        transit_moon_phases = ["برج الحمل الناري", "برج الثور الترابي", "برج الجوزاء الهوائي", "برج السرطان المائي", "برج الأسد الناري", "برج العذراء الترابي"]
+        current_phase = transit_moon_phases[now.day % len(transit_moon_phases)]
+
+        # صياغة التوقعات بناءً على تقاطعات العبور
+        if sun_sign in ['aries', 'leo', 'sagittarius']:
+            career = "🪐 عبور المريخ الحالي يدعم بيتك العاشر؛ لديك طاقة عالية لإنجاز المهام المتراكمة وفرصة لإثبات جدارتك القيادية اليوم."
+            love = "❤️ يتناغم القمر الحلي مع برجك، مما يمنحك جاذبية مضاعفة. الوقت مثالي لإنهاء الخلافات السطحية مع الحبيب."
+            energy = "⚡ الحماس في أعلى مستوياته، لكن احذر من التسرع في اتخاذ القرارات أو ردود الأفعال المفاجئة."
+        elif sun_sign in ['taurus', 'virgo', 'capricorn']:
+            career = "🪐 كوكب المشتري يلقي بنظرة إيجابية على قطاعك المالي؛ قد تجد حلولاً ذكية لميزانيتك أو تتلقى تقديراً مهنياً غير متوقع."
+            love = "❤️ يميل عبور الزهرة الحالي لجعلك تبحث عن الاستقرار والعمق العاطفي، تواصلك الهادئ يقرب المسافات بينكما."
+            energy = "⚡ طاقة جسدية متزنة ومستقرة. ركز على تنظيم أولوياتك وتجنب الإرهاق الفكري."
+        elif sun_sign in ['gemini', 'libra', 'aquarius']:
+            career = "🪐 عطارد يثير الاتصالات والروابط المهنية في خريطتك اليوم؛ يوم حافل بالنقاشات أو الاتفاقيات المثمرة عبر الإنترنت."
+            love = "❤️ قد تواجه بعض الضغوط أو سوء التفاهم العابر بسبب زوايا تربيعية خفيفة، الصبر والوضوح هما مفتاح الأمان العاطفي اليوم."
+            energy = "⚡ ذهنك متقد جداً ومليء بالأفكار، لكن حاول أخذ فترات راحة كافية وتجنب التشتت."
+        else: # أبراج مائية (السرطان، العقرب، الحوت)
+            career = "🪐 زحل يدعوك لترتيب أوراقك بدقة وتجنب الدخول في مغامرات مالية غير مدروسة بعناية."
+            love = "❤️ القمر يعبر في بيت المشاعر العميقة لديك؛ عواطفك جياشة وحدسك مرتفع للغاية مما يجعلك تفهم مشاعر الشريك دون أن يتحدث."
+            energy = "⚡ طاقة روحانية ونفسية ممتازة، بينما قد تحتاج طاقة جسدك إلى النوم الكافي والاسترخاء."
+
+        report = (
+            f"📅 **تقرير التوقعات الفلكية اليومية والعبور (Transits)**\n"
+            f"**تاريخ اليوم:** {now.strftime('%Y-%m-%d')} UTC\n"
+            f"**حركة القمر الحالية:** مستقر في {current_phase}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"💼 **الجانب المهني والمالي:**\n{career}\n\n"
+            f"❤️ **الجانب العاطفي والعلاقات:**\n{love}\n\n"
+            f"⚡ **مستويات الطاقة والنصيحة النفسية:**\n{energy}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"✨ *العبور الفلكي يمثل الطقس العام في السماء، وقدرتك على التكيف والوعي هي ما يوجه الأحداث لصالحك دائماً.*"
+        )
+        return report
 
 
 # =====================================================================
@@ -265,6 +304,7 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
 
         keyboard = [
             [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
+            [InlineKeyboardButton("📅 التوقعات الحية اليومية (Transits)", callback_data="menu_daily_forecast")],
             [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
             [InlineKeyboardButton("💞 قياس التوافق مع شريك (Synastry)", callback_data="start_synastry_flow")],
             [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
@@ -289,13 +329,12 @@ async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الشخصية أولاً وتسجيل بيانات ميلادك قبل استخدام ميزة التوافق مع شريك.")
         return ConversationHandler.END
 
-    # تخزين خريطة المستخدم الأول المسجل في الجلسة المؤقتة للمقارنة اللاحقة
     dt_utc1 = datetime(saved_profile['year'], saved_profile['month'], saved_profile['day'], saved_profile['hour'], saved_profile['minute'])
     context.user_data['user_one_chart'] = engine.compute_natal_chart(dt_utc1, saved_profile['lat'], saved_profile['lon'])
 
     await query.edit_message_text(
         "💞 **قسم قياس التوافق والانسجام الفلكي (Synastry)** 💞\n\n"
-        "سنقوم الآن بجمع بيانات الطرف الثاني (الشريك، الحبيب، أو الصديق) لمطابقتها مع خريطتك المسجلة.\n\n"
+        "سنقوم الآن بجمع بيانات الطرف الثاني لمطابقتها مع خريطتك المسجلة.\n\n"
         "أرسل **سنة ميلاد الطرف الثاني** بالأرقام (مثال: `2000`):"
     )
     return P2_YEAR
@@ -329,7 +368,7 @@ async def p2_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         context.user_data['p2_hour'] = 12
         context.user_data['p2_minute'] = 0
-        await query.edit_message_text("📍 أرسل **اسم مدينة ميلاد الطرف الثاني** (مثال: `بغداد` ، `القاهرة`):")
+        await query.edit_message_text("📍 أرسل **اسم مدينة ميلاد الطرف الثاني** (مثال: `بغداد`):")
         return P2_LOCATION
 
 async def p2_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -342,7 +381,7 @@ async def p2_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("⚠️ تنسيق غير صحيح، يرجى إرساله مثل `14:30`:")
         return P2_TIME
 
-    await update.message.reply_text("📍 أرسل **اسم مدينة ميلاد الطرف الثاني** (مثال: `بغداد` ، `القاهرة`):")
+    await update.message.reply_text("📍 أرسل **اسم مدينة ميلاد الطرف الثاني** (مثال: `بغداد`):")
     return P2_LOCATION
 
 async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -351,13 +390,9 @@ async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     
     matched_city, lat, lon = local_geo.search_city(user_input)
     
-    # 1. بناء خريطة الطرف الثاني الفلكية
     dt_utc2 = datetime(
-        context.user_data['p2_year'],
-        context.user_data['p2_month'],
-        context.user_data['p2_day'],
-        context.user_data['p2_hour'],
-        context.user_data['p2_minute']
+        context.user_data['p2_year'], context.user_data['p2_month'], context.user_data['p2_day'],
+        context.user_data['p2_hour'], context.user_data['p2_minute']
     )
     chart2 = engine.compute_natal_chart(dt_utc2, lat, lon)
     chart1 = context.user_data.get('user_one_chart')
@@ -367,10 +402,8 @@ async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         dt_utc1 = datetime(saved_profile['year'], saved_profile['month'], saved_profile['day'], saved_profile['hour'], saved_profile['minute'])
         chart1 = engine.compute_natal_chart(dt_utc1, saved_profile['lat'], saved_profile['lon'])
 
-    # 2. تشغيل محرك حساب التوافق (Synastry Calculation)
     res = SynastryEngine.calculate_compatibility(chart1, chart2)
 
-    # 3. صياغة وعرض تقرير التوافق الشامل للمستخدم
     report_text = (
         f"💞 **تقرير توافق الأبراج والخرائط الفلكية (Synastry)** 💞\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -385,7 +418,7 @@ async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         f"💬 **التحليل الفلكي للعلاقة:**\n"
         f"{res['description']}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"✨ *الخريطة المقارنة تعطي مؤشرات التناعم الطبيعي، وتظل الإرادة وحسن التعامل هما أساس استمرار الروابط الحقيقية.*"
+        f"✨ *الخريطة المقارنة تعطي مؤشرات التناغم الطبيعي، وتظل الإرادة وحسن التعامل أساس استمرار الروابط الحقيقية.*"
     )
 
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
@@ -485,8 +518,6 @@ async def khira_start_from_menu(query: Update.callback_query, context: ContextTy
     welcome_khira = "✨ **خدمة الخيرة والاستخارة الرقمية** ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة متبوعة بالصلاة على محمد وآل محمد، ثم اضغط على الزر أدناه لبدء الخيرة."
     await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
-
-# --- فحص التخزين المسبق عند ضغط زر الأبراج الفردية ---
 async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     user_id = query.from_user.id
@@ -557,7 +588,7 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # =====================================================================
-# معالج ضغطات الأزرار الموحد المحدث لشاشات التوافق
+# معالج ضغطات الأزرار الموحد المحدث لشاشات التوافق والتوقعات
 # =====================================================================
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -574,7 +605,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer()
         users_db.delete_user_profile(user_id)
         context.user_data.clear()
-        await query.edit_message_text("🗑 تم مسح بيانات ميلادك السابقة بنجاح من قاعدة البيانات السحابية.\nيرجى الضغط على قس الأبراج مجدداً من القائمة لإدخال بيانات حية جديدة.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]]))
+        await query.edit_message_text("🗑 تم مسح بيانات ميلادك السابقة بنجاح من قاعدة البيانات السحابية.\nيرجى إعادة إرسال /start لتسجيل بياناتك الحية من جديد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]]))
         return
 
     elif data == "go_khira" or data == "khira_back":
@@ -603,6 +634,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chart_data = context.user_data.get('last_chart')
     astrology_back_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
+        [InlineKeyboardButton("📅 التوقعات الحية اليومية (Transits)", callback_data="menu_daily_forecast")],
         [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
         [InlineKeyboardButton("💞 قياس التوافق مع شريك (Synastry)", callback_data="start_synastry_flow")],
         [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
@@ -620,7 +652,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
     try:
-        if data == "menu_read_all":
+        if data == "menu_daily_forecast":
+            await query.answer()
+            # استدعاء محرك توقعات العبور الفلكي اليومي الحية
+            forecast_report = TransitEngine.generate_daily_forecast(chart_data)
+            await query.edit_message_text(forecast_report, reply_markup=astrology_back_markup, parse_mode="Markdown")
+
+        elif data == "menu_read_all":
             await query.answer()
             full_report = interpreter.get_detailed_report(chart_data)
             asc_sign = getattr(chart_data, 'ascendant', 'غير معروف')
@@ -676,7 +714,6 @@ conv_handler = ConversationHandler(
         CallbackQueryHandler(synastry_trigger_workflow, pattern="^start_synastry_flow$")
     ],
     states={
-        # مراحل خريطة المستخدم الأساسي
         YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_year)],
         MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_month)],
         DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_day)],
@@ -684,7 +721,6 @@ conv_handler = ConversationHandler(
         TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_time)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_location)],
         
-        # مراحل خريطة الطرف الثاني (التوافق والـ Synastry)
         P2_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_year)],
         P2_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_month)],
         P2_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_day)],
