@@ -53,7 +53,7 @@ class KhiraEngine:
     def __init__(self, json_path: str = "khira_data.json"):
         self.json_path = json_path
         self.cooldowns = {}
-        self.cooldown_duration = 3600  # حظر التكرار لمدة ساعة واحدة (3600 ثانية)
+        self.cooldown_duration = 3600  
         self.khira_data = self.load_khira_json()
 
     def load_khira_json(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -101,7 +101,7 @@ khira_engine = KhiraEngine()
 
 
 # =====================================================================
-# محرك التحليل الفلكي التركيبي الذكي (النقلة التقنية للمحترفين)
+# محرك التحليل الفلكي التركيبي الذكي 
 # =====================================================================
 class AstrologySynthesisEngine:
     def __init__(self, json_path: str = "interpretations.json"):
@@ -195,7 +195,6 @@ class AstrologySynthesisEngine:
         return messages_to_send
 
 
-# كائن وسيط مرن لتخطي قيود Pydantic وتوحيد أسماء الحقول لملف الرسم
 class FlexibleChartAdapter:
     def __init__(self, raw_chart: Any):
         self.ascendant = getattr(raw_chart, 'ascendant', 'Aries')
@@ -260,9 +259,7 @@ def get_start_keyboard():
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # مسح أي بيانات سابقة لبدء جلسة نظيفة عند كتابة /start
     context.user_data.clear()
-    
     welcome_text = (
         "🔮 **مرحباً بك في البوت الشامل** 🔮\n\n"
         "الرجاء اختيار القسم الذي تود الدخول إليه من الأزرار أدناه:"
@@ -271,7 +268,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-# --- معالجة الانتقال إلى الخيرة الرقمية ---
 async def khira_start_from_menu(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE):
     welcome_khira = (
         "✨ **خدمة الخيرة والاستخارة الرقمية** ✨\n\n"
@@ -284,7 +280,10 @@ async def khira_start_from_menu(query: Update.callback_query, context: ContextTy
 
 
 # --- بدء استمارة الأبراج من ضغطة زر ---
-async def astrology_trigger_workflow(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer() # إنهاء حالة الانتظار في التليجرام فوراً ليفتح القسم بسلاسة
+    
     await query.edit_message_text(
         "🔮 **نظام التحليل الفلكي الشامل**\n\n"
         "سنقوم بإعداد خريطتك الشخصية العميقة واستخراج ملامحك الفلكية بدقة.\n"
@@ -360,7 +359,6 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("⏳ جاري استخراج وحساب البيانات والمواضع الفلكية الحقيقية...")
 
     try:
-        # حساب وحفظ البيانات الأساسية في الجلسة دون إرسال أي صورة تلقائياً
         chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
         facts = [] 
         score_data = RulesEngine.evaluate(facts)
@@ -371,12 +369,10 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['lat'] = lat
         context.user_data['lon'] = lon
 
-        # توليد رسالة الاختصار والترحيب المبدئي بقسم الفلك
         summary_msg = interpreter.get_minimal_summary(chart_data)
         score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
-        # الأزرار الجديدة المحددة والمختصرة طبقاً لطلبك
         keyboard = [
             [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
             [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
@@ -401,7 +397,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = query.from_user.id
     data = query.data
 
-    # --- إدارة الصفحة الرئيسية والعودة ---
     if data == "main_home":
         await query.answer()
         context.user_data.clear()
@@ -417,7 +412,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await khira_start_from_menu(query, context)
         return
 
-    # --- معالجة أزرار نظام الخيرة المعتمدة على khira_data.json ---
     elif data == "khira_request":
         remaining = khira_engine.check_cooldown(user_id)
         if remaining > 0:
@@ -468,10 +462,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(rules_text, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN)
         return
 
-    # --- معالجة أزرار التحليل الفلكي والأبراج ---
     chart_data = context.user_data.get('last_chart')
     
-    # قائمة العودة الخاصة بصفحة الأبراج بعد انتهاء الحساب
     astrology_back_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
         [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
@@ -484,7 +476,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     try:
-        # زر قراءة البرج والتحليل الشامل دفعة واحدة دون تقسيمات فرعية
         if data == "menu_read_all":
             await query.answer("جاري استخلاص وتحليل كافة المؤشرات الفلكية المتقدمة...")
             
@@ -501,7 +492,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"✨ انتهى التقرير النصي الشامل."
             )
             
-            # إذا كان النص طويلاً جداً يتم إرساله مقسماً لضمان عدم تجاوز حدود التليجرام
             if len(complete_analysis) > 4000:
                 parts = [complete_analysis[i:i+4000] for i in range(0, len(complete_analysis), 4000)]
                 for i, part in enumerate(parts):
@@ -512,7 +502,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             else:
                 await query.edit_message_text(complete_analysis, reply_markup=astrology_back_markup, parse_mode="Markdown")
 
-        # زر توليد وإرسال الصورة البيانية فقط وحصرياً عند طلبه
         elif data == "menu_generate_image":
             await query.answer("جاري رسم وتوليد خريطتك الفلكية هندسياً الحية...")
             try:
@@ -560,4 +549,6 @@ conv_handler = ConversationHandler(
 
 telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
-telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks))
+
+# التعديل الهام هنا: تم تمرير Regex Pattern واضح لتجنب اعتراض الـ go_astrology من المحادثة
+telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology)$).*"))
