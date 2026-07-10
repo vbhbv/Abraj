@@ -69,7 +69,6 @@ class KhiraEngine:
             return {"good": [], "medium": [], "bad": []}
 
     def check_cooldown(self, user_id: int) -> int:
-        """ترجع الدقائق المتبقية للمستخدم إذا كان في فترة الحظر، وإلا ترجع 0"""
         current_time = time.time()
         if user_id in self.cooldowns:
             time_passed = current_time - self.cooldowns[user_id]
@@ -78,7 +77,6 @@ class KhiraEngine:
         return 0
 
     def get_random_khira(self, user_id: int) -> Dict[str, Any]:
-        # نظام الأوزان النسبية (جيد: 50%، وسط: 30%، نهي: 20%)
         categories = ["good", "medium", "bad"]
         weights = [0.50, 0.30, 0.20]
         chosen_category = random.choices(categories, weights=weights, k=1)[0]
@@ -94,7 +92,8 @@ class KhiraEngine:
     def get_main_keyboard():
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("🔮 طلب خيرة جديدة", callback_data="khira_request")],
-            [InlineKeyboardButton("📜 شروط وآداب الخيرة", callback_data="khira_rules")]
+            [InlineKeyboardButton("📜 شروط وآداب الخيرة", callback_data="khira_rules")],
+            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
         ])
 
 # تهيئة محرك الخيرة عالمياً
@@ -111,7 +110,7 @@ class AstrologySynthesisEngine:
         self.connectors = [
             " يتكامل this التموقع بعمق مع وجوده في ",
             "، الأمر الذي ينعكس بشكل مباشر على شؤون ",
-            "، مما يمنح طاقة هذا الكوكب تجسيداً عملياً داخل ",
+            "، مما يمنح طاقة this الكوكب تجسيداً عملياً داخل ",
             " ليصبح مسرحاً رئيسياً لـ "
         ]
 
@@ -204,7 +203,6 @@ class FlexibleChartAdapter:
         self.midheaven_degree = getattr(raw_chart, 'midheaven_degree', 270.0)
         self.houses = getattr(raw_chart, 'houses', {})
         
-        # نسخ وتكييف الكواكب
         self.planets = {}
         raw_planets = getattr(raw_chart, 'planets', {})
         for p_name, p_data in raw_planets.items():
@@ -213,7 +211,6 @@ class FlexibleChartAdapter:
                     self.longitude = getattr(data, 'longitude', getattr(data, 'abs_degree', getattr(data, 'degree', 0.0)))
             self.planets[p_name] = PlanetAdapter(p_data)
             
-        # نسخ وتكييف الاتصالات (Aspects)
         self.aspects = []
         raw_aspects = getattr(raw_chart, 'aspects', [])
         for aspect in raw_aspects:
@@ -250,25 +247,46 @@ async def webhook_handler(request: Request):
 
 @app.get("/")
 async def root_handler():
-    return {"status": "healthy", "bot": "Astrology and Khira Bot is running via Webhook"}
+    return {"status": "healthy", "bot": "Unified Bot is running via Webhook"}
 
-# --- منطق ومعالجات أمر الخيرة الرقمية ---
 
-async def khira_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =====================================================================
+# منطق معالجة القائمة الرئيسية وأمر /start المحدث
+# =====================================================================
+def get_start_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔮 قسم الأبراج والفلك", callback_data="go_astrology")],
+        [InlineKeyboardButton("📖 قسم الخيرة الرقمية", callback_data="go_khira")]
+    ])
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # مسح أي بيانات سابقة لبدء جلسة نظيفة عند كتابة /start
+    context.user_data.clear()
+    
+    welcome_text = (
+        "🔮 **مرحباً بك في البوت الشامل** 🔮\n\n"
+        "الرجاء اختيار القسم الذي تود الدخول إليه من الأزرار أدناه:"
+    )
+    await update.message.reply_text(welcome_text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.MARKDOWN)
+    return ConversationHandler.END
+
+
+# --- معالجة الانتقال إلى الخيرة الرقمية ---
+async def khira_start_from_menu(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE):
     welcome_khira = (
-        "✨ **مرحباً بك في خدمة الخيرة والاستخارة الرقمية** ✨\n\n"
+        "✨ **خدمة الخيرة والاستخارة الرقمية** ✨\n\n"
         "«فَإِذَا عَزَمْتَ فَتَوَكَّلْ عَلَى اللَّهِ ۚ إِنَّ اللَّهَ يُحِبُّ الْمُتَوَكِّلِينَ»\n\n"
         "يرجى استحضار النية، وقراءة سورة الفاتحة متبوعة بالصلاة على محمد وآل محمد، ثم اضغط على الزر أدناه لبدء الخيرة.\n\n"
         "⚠️ **تنويه إخلاء مسؤولية:**\n"
-        "هذه الخدمة برمجية استرشادية رقمية مبنية على التفاؤل بالقرآن الكريم، وليست بديلاً عن الاستخارة الشرعية الفقهية."
+        "هذه الخدمة برمجية استرشادية رقمية مبنية على التفاؤل بالقرآن الكريم."
     )
-    await update.message.reply_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+    await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
 
-# --- منطق المحادثة الفلكية والمراحل ---
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(
-        "🔮 **مرحباً بك في نظام التحليل الفلكي الشامل**\n\n"
+# --- بدء استمارة الأبراج من ضغطة زر ---
+async def astrology_trigger_workflow(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await query.edit_message_text(
+        "🔮 **نظام التحليل الفلكي الشامل**\n\n"
         "سنقوم بإعداد خريطتك الشخصية العميقة واستخراج ملامحك الفلكية بدقة.\n"
         "ابدأ بإرسال **سنة ميلادك** بالأرقام (مثال: `1998`):"
     )
@@ -339,48 +357,30 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['minute']
     )
     
-    await update.message.reply_text("⏳ جاري استخراج البيانات وحساب المواقع الفلكية من المصادر الرسمية...")
+    await update.message.reply_text("⏳ جاري استخراج وحساب البيانات والمواضع الفلكية الحقيقية...")
 
     try:
-        # 1. حساب الخريطة الأساسية من محرك السويس إيفيمريس
+        # حساب وحفظ البيانات الأساسية في الجلسة دون إرسال أي صورة تلقائياً
         chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
-        
-        # 2. استخراج وفحص النقاط من محرك القواعد
         facts = [] 
         score_data = RulesEngine.evaluate(facts)
         total_score = score_data.total_score 
 
-        # حفظ البيانات والسكور منفصلين داخل جلسة المستخدم الحالية
         context.user_data['last_chart'] = chart_data
         context.user_data['last_score'] = total_score
+        context.user_data['lat'] = lat
+        context.user_data['lon'] = lon
 
-        # 3. توليد الرسم بصيغة بايتات PNG حقيقية مباشرة عبر Pillow لمنع مشاكل العرض تماماً
-        try:
-            adapted_chart = FlexibleChartAdapter(chart_data)
-            img_bytes_data = drawer.generate_chart_png(adapted_chart)
-            
-            img_buffer = io.BytesIO(img_bytes_data)
-            img_buffer.name = "natal_chart.png"
-            
-            await update.message.reply_photo(
-                photo=img_buffer,
-                caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم رسمها هندسياً بدقة بالغة اعتماداً على درجات أجرامك وأوتادك الحقيقية لحظة ميلادك."
-            )
-        except Exception as draw_err:
-            logger.error(f"Error during chart drawing: {draw_err}", exc_info=True)
-            await update.message.reply_text("⚠️ تم حساب بياناتك بنجاح ولكن تعذر توليد الصورة، جاري إرسال التقرير النصي...")
-
-        # 4. حل مشكلة دالة التفسير النصي للمستخدم
+        # توليد رسالة الاختصار والترحيب المبدئي بقسم الفلك
         summary_msg = interpreter.get_minimal_summary(chart_data)
         score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
-        # 5. بناء مصفوفة الأزرار الجذابة التشويقية
+        # الأزرار الجديدة المحددة والمختصرة طبقاً لطلبك
         keyboard = [
-            [InlineKeyboardButton("🧠 شخصيتك الحقيقية", callback_data="menu_personal"), InlineKeyboardButton("❤️ الحب والزواج", callback_data="menu_love")],
-            [InlineKeyboardButton("💼 المهنة المناسبة", callback_data="menu_career"), InlineKeyboardButton("💰 المال والثروة", callback_data="menu_money")],
-            [InlineKeyboardButton("🌟 نقاط القوة والضعف", callback_data="menu_features"), InlineKeyboardButton("🔮 التوقعات", callback_data="menu_predict")],
-            [InlineKeyboardButton("🪐 الخريطة الكاملة (للمحترفين)", callback_data="menu_full_chart")]
+            [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
+            [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
+            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -394,15 +394,31 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # =====================================================================
-# معالج ضغطات الأزرار (الفلكية + الخيرة) الموحد
+# معالج ضغطات الأزرار الموحد والمختصر بالكامل
 # =====================================================================
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
 
-    # --- أولاً: معالجة أزرار نظام الخيرة ---
-    if data == "khira_request":
+    # --- إدارة الصفحة الرئيسية والعودة ---
+    if data == "main_home":
+        await query.answer()
+        context.user_data.clear()
+        welcome_text = (
+            "🔮 **مرحباً بك في البوت الشامل** 🔮\n\n"
+            "الرجاء اختيار القسم الذي تود الدخول إليه من الأزرار أدناه:"
+        )
+        await query.edit_message_text(welcome_text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    elif data == "go_khira" or data == "khira_back":
+        await query.answer()
+        await khira_start_from_menu(query, context)
+        return
+
+    # --- معالجة أزرار نظام الخيرة المعتمدة على khira_data.json ---
+    elif data == "khira_request":
         remaining = khira_engine.check_cooldown(user_id)
         if remaining > 0:
             await query.answer(
@@ -452,151 +468,84 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(rules_text, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN)
         return
 
-    elif data == "khira_back":
-        await query.answer()
-        welcome_khira = (
-            "✨ **خدمة الخيرة والاستخارة الرقمية** ✨\n\n"
-            "يرجى استحضار النية والضغط على الزر أدناه لبدء الخيرة."
-        )
-        await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
-        return
-
-    # --- ثانياً: معالجة أزرار نظام التحليل الفلكي ---
+    # --- معالجة أزرار التحليل الفلكي والأبراج ---
     chart_data = context.user_data.get('last_chart')
-    if not chart_data:
-        if data.startswith("menu_"):
-            await query.answer()
-            await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك أعد حساب الخريطة باستخدام الأمر /start")
-        return
-
-    if data == "menu_back":
-        await query.answer()
-        summary_msg = interpreter.get_minimal_summary(chart_data)
-        total_score = context.user_data.get('last_score', 0)
-        score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
-        summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
-            
-        keyboard = [
-            [InlineKeyboardButton("🧠 شخصيتك الحقيقية", callback_data="menu_personal"), InlineKeyboardButton("❤️ الحب والزواج", callback_data="menu_love")],
-            [InlineKeyboardButton("💼 المهنة المناسبة", callback_data="menu_career"), InlineKeyboardButton("💰 المال والثروة", callback_data="menu_money")],
-            [InlineKeyboardButton("🌟 نقاط القوة والضعف", callback_data="menu_features"), InlineKeyboardButton("🔮 التوقعات", callback_data="menu_predict")],
-            [InlineKeyboardButton("🪐 الخريطة الكاملة (للمحترفين)", callback_data="menu_full_chart")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(summary_msg, reply_markup=reply_markup, parse_mode="Markdown")
-        return
-
-    back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ العودة للقائمة الرئيسية", callback_data="menu_back")]])
-    full_report = interpreter.get_detailed_report(chart_data)
     
-    def extract_planets_info(report_text, target_planets):
-        sections = report_text.split("---")
-        extracted = []
-        for section in sections:
-            if any(planet in section for planet in target_planets):
-                extracted.append(section.strip())
-        if extracted:
-            return "\n\n---\n\n".join(extracted)
-        return "⚠️ تفاصيل هذا القسم مدمجة في تقرير خريطتك الكاملة."
+    # قائمة العودة الخاصة بصفحة الأبراج بعد انتهاء الحساب
+    astrology_back_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
+        [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
+    ])
+
+    if not chart_data and data.startswith("menu_"):
+        await query.answer()
+        await query.message.reply_text("❌ انتهت صلاحية الجلسة، من فضلك أعد إدخال البيانات.")
+        return
 
     try:
-        if data == "menu_personal":
-            await query.answer()
+        # زر قراءة البرج والتحليل الشامل دفعة واحدة دون تقسيمات فرعية
+        if data == "menu_read_all":
+            await query.answer("جاري استخلاص وتحليل كافة المؤشرات الفلكية المتقدمة...")
+            
+            full_report = interpreter.get_detailed_report(chart_data)
             asc_sign = getattr(chart_data, 'ascendant', 'غير معروف')
-            planets_data = extract_planets_info(full_report, ["الشمس", "القمر"])
-            report = (
-                f"🧠 **تحليل شخصيتك الحقيقية والفريدة**\n\n"
-                f"• **البرج الصاعد (الطالع):** {asc_sign}\n\n"
-                f"**المواقع والمؤشرات النفسية لجوهر شخصيتك الحالية:**\n\n"
-                f"{planets_data}"
-            )
-            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
-
-        elif data == "menu_love":
-            await query.answer()
-            planets_data = extract_planets_info(full_report, ["الزهرة", "البيت 7", "نبتون"])
-            report = (
-                "❤️ **تحليل العلاقات، الحب والشراكات العاطفية**\n\n"
-                "إليك الجوانب الفلكية الحاكمة لطاقتك العاطفية والارتباط في خريطتك:\n\n"
-                f"{planets_data}"
-            )
-            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
-
-        elif data == "menu_career":
-            await query.answer()
-            planets_data = extract_planets_info(full_report, ["المريخ", "عطارد", "البيت 6", "البيت 11"])
-            report = (
-                "💼 **المسار المهني، بيئة العمل والإنتاجية الاحترافية**\n\n"
-                "الكواكب المسؤولة عن مجالات نجاحك، وتعاملك مع المسؤوليات والزملاء:\n\n"
-                f"{planets_data}"
-            )
-            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
-
-        elif data == "menu_money":
-            await query.answer()
-            planets_data = extract_planets_info(full_report, ["زحل", "المشتري", "البيت 2"])
-            report = (
-                "💰 **التحليل المالي، إدارة الثروة وفرص الوفرة**\n\n"
-                "مواقع الكواكب والبيوت الحاكمة لوضعك المالي ومجهودك الشخصي لإحراز المكتسبات:\n\n"
-                f"{planets_data}"
-            )
-            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
-
-        elif data == "menu_features":
-            await query.answer()
-            planets_data = extract_planets_info(full_report, ["تشيرون", "ليليث", "عطارد"])
-            report = (
-                "🌟 **تحليل نقاط القوة، التحديات والمخاوف النفسية الباطنية**\n\n"
-                "يكشف التوزيع الفلكي عن مواضع قوتك العقلية وجراحك الكرمية العميقة:\n\n"
-                f"{planets_data}"
-            )
-            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
-
-        elif data == "menu_predict":
-            await query.answer()
-            planets_data = extract_planets_info(full_report, ["أورانوس", "بلوتو", "العقدة الشمالية", "العقدة الجنوبية"])
-            report = (
-                "🔮 **مؤشرات التغيير، التوقعات والتحولات الكرمية**\n\n"
-                "تأثير أجرام التحول الجذري ومسارات التطور الروحي في خريطتك الحالية:\n\n"
-                f"{planets_data}"
-            )
-            await query.edit_message_text(report, reply_markup=back_markup, parse_mode="Markdown")
-
-        elif data == "menu_full_chart":
-            await query.answer("جاري استخلاص وقراءة موازين الخريطة الفلكية لوضع المحترفين...")
             
-            raw_planets = getattr(chart_data, 'planets', {})
-            birth_map_data = {}
-            for p_name, p_data in raw_planets.items():
-                birth_map_data[p_name] = getattr(p_data, 'sign', 'Aries')
-                birth_map_data[f"{p_name}_house"] = str(getattr(p_data, 'house', '1'))
-            
-            synthesis_engine = AstrologySynthesisEngine()
-            chunks = synthesis_engine.synthesize_astrology_report(birth_map_data)
-            
-            for i, chunk in enumerate(chunks):
-                if i == 0:
-                    await query.edit_message_text(chunk, parse_mode=ParseMode.MARKDOWN)
-                else:
-                    await telegram_app.bot.send_message(chat_id=user_id, text=chunk, parse_mode=ParseMode.MARKDOWN)
-                    
-            await telegram_app.bot.send_message(
-                chat_id=user_id,
-                text="✨ **انتهى تقرير المحترفين الشامل.** يمكنك الآن العودة للقائمة الرئيسية:",
-                reply_markup=back_markup
+            complete_analysis = (
+                f"🪐 **التقرير الفلكي الشامل والكامل لخريطتك** 🪐\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• **البرج الصاعد (الطالع):** {asc_sign}\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"{full_report}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"✨ انتهى التقرير النصي الشامل."
             )
             
+            # إذا كان النص طويلاً جداً يتم إرساله مقسماً لضمان عدم تجاوز حدود التليجرام
+            if len(complete_analysis) > 4000:
+                parts = [complete_analysis[i:i+4000] for i in range(0, len(complete_analysis), 4000)]
+                for i, part in enumerate(parts):
+                    if i == len(parts) - 1:
+                        await query.message.reply_text(part, reply_markup=astrology_back_markup, parse_mode="Markdown")
+                    else:
+                        await telegram_app.bot.send_message(chat_id=user_id, text=part, parse_mode="Markdown")
+            else:
+                await query.edit_message_text(complete_analysis, reply_markup=astrology_back_markup, parse_mode="Markdown")
+
+        # زر توليد وإرسال الصورة البيانية فقط وحصرياً عند طلبه
+        elif data == "menu_generate_image":
+            await query.answer("جاري رسم وتوليد خريطتك الفلكية هندسياً الحية...")
+            try:
+                adapted_chart = FlexibleChartAdapter(chart_data)
+                img_bytes_data = drawer.generate_chart_png(adapted_chart)
+                
+                img_buffer = io.BytesIO(img_bytes_data)
+                img_buffer.name = "natal_chart.png"
+                
+                await telegram_app.bot.send_photo(
+                    chat_id=user_id,
+                    photo=img_buffer,
+                    caption="🪐 **عجلة خريطتك الفلكية الحقيقية (Natal Wheel)**\nتم توليد الرسم البياني بناءً على طلبك الآن اعتماداً على درجات أجرامك وأوتادك الحقيقية.",
+                    reply_markup=astrology_back_markup
+                )
+            except Exception as draw_err:
+                logger.error(f"Error during manual chart drawing: {draw_err}", exc_info=True)
+                await query.message.reply_text("⚠️ تعذر توليد ورسم الصورة حالياً، يرجى مراجعة التقرير النصي.", reply_markup=astrology_back_markup)
+
     except Exception as exc:
         logger.error(f"Error handling menu click {data}: {exc}", exc_info=True)
-        await query.message.reply_text("⚠️ عذراً، جاري تحديث الفلترة الفلكية، يمكنك مراجعة التقرير الشامل مباشرة.")
+        await query.message.reply_text("⚠️ حدث خطأ داخلي أثناء استخلاص البيانات الفلكية.", reply_markup=astrology_back_markup)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("🚫 تم إلغاء العملية. يمكنك البدء من جديد بإرسال /start")
+    await update.message.reply_text("🚫 تم إلغاء العملية الحالية. يمكنك البدء من جديد بإرسال /start")
     return ConversationHandler.END
 
-# 5. تسجيل ومعالجة الـ Handlers
+
+# =====================================================================
+# تسجيل ومعالجة الـ Handlers للـ Conversation والأزرار
+# =====================================================================
 conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('start', start)],
+    entry_points=[CallbackQueryHandler(astrology_trigger_workflow, pattern="^go_astrology$")],
     states={
         YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_year)],
         MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_month)],
@@ -609,6 +558,6 @@ conv_handler = ConversationHandler(
     per_message=False
 )
 
+telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
-telegram_app.add_handler(CommandHandler('khira', khira_start))
 telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks))
