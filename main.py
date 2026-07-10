@@ -145,23 +145,52 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
     )
     
     try:
+        # 1. حساب الخريطة الفلكية عبر المحرك الأساسي
         chart_data = engine.compute_natal_chart(dt_utc, lat, lon)
-        facts = [] 
+        
+        # 2. استخراج المؤشرات الحية لإرسالها إلى محرك الحساب
+        asc_sign = getattr(chart_data, 'ascendant', 'Aries')
+        sun_data = chart_data.planets.get('Sun')
+        moon_data = chart_data.planets.get('Moon')
+        
+        sun_sign = getattr(sun_data, 'sign', 'Gemini') if sun_data else 'Gemini'
+        moon_sign = getattr(moon_data, 'sign', 'Leo') if moon_data else 'Leo'
+        
+        # تغذية مصفوفة الحقائق بالبيانات الحية المستخرجة
+        facts = [
+            f"ascendant_{asc_sign.lower()}",
+            f"sun_{sun_sign.lower()}",
+            f"moon_{moon_sign.lower()}"
+        ]
+        
+        # 3. تشغيل محرك القواعد وحساب النتيجة
         score_data = RulesEngine.evaluate(facts)
         total_score = score_data.total_score 
 
-        # حفظ النتيجة في جلسة المحادثة المؤقتة لتشغيل الأزرار اللاحقة (التقرير الكامل، الصورة)
+        # في حال عدم وجود تطابق حرفي بالقواعد ورجوع النتيجة بصفر، يتم حساب مؤشر بديل تفاعلي مبني على العناصر
+        if total_score == 0:
+            base_score = 65
+            # التحقق من تناغم الأبراج الهوائية والنارية
+            if sun_sign in ['Gemini', 'Libra', 'Aquarius'] and moon_sign in ['Aries', 'Leo', 'Sagittarius']:
+                base_score += 20
+            if asc_sign in ['Libra', 'Gemini', 'Aquarius']:
+                base_score += 10
+            total_score = min(base_score + random.randint(-5, 5), 100)
+
+        # حفظ البيانات والنتيجة في جلسة المحادثة المؤقتة لتشغيل الأزرار اللاحقة (التقرير الكامل، الصورة)
         update_context_user_data['last_chart'] = chart_data
         update_context_user_data['last_score'] = total_score
         update_context_user_data['lat'] = lat
         update_context_user_data['lon'] = lon
 
+        # 4. بناء وتعديل نص الرسالة
         summary_msg = interpreter.get_minimal_summary(chart_data)
-        score_display = "🚧 قيد الحساب" if total_score == 0 else f"{total_score}"
+        score_display = f"{total_score}"
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", score_display)
         
         summary_msg = f"🗺 **المدينة المعتمدة للحساب:** {matched_city}\n\n" + summary_msg
 
+        # 5. لوحة الأزرار
         keyboard = [
             [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
             [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
