@@ -43,8 +43,11 @@ engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
 
-# تعديل لجلب التوكن من متغيرات البيئة
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7523578617:AAHECJgxEx-9FB9GN2lWoyJJHrunbzH-BwU")
+# جلب التوكن بشكل صارم ومباشر من متغيرات البيئة دون قيم احتياطية قديمة
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("❌ خطأ حرج: لم يتم العثور على متغير البيئة 'TELEGRAM_BOT_TOKEN'! يرجى إضافته في إعدادات المنصة.")
+
 WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
 telegram_app = Application.builder().token(TOKEN).build()
@@ -227,18 +230,15 @@ class TransitEngine:
     def generate_daily_forecast(natal_chart: Any) -> str:
         """يقوم بمقارنة الكواكب الحالية في السماء بلحظة ميلاد المستخدم لإنشاء توقعات حية"""
         now = datetime.utcnow()
-        # محاكاة حساب العبور الفلكي الحالي مقارنة بالشمس والقمر للمستخدم الأصلي
         sun_sign = getattr(natal_chart.planets.get('Sun'), 'sign', 'Aries').lower()
         moon_sign = getattr(natal_chart.planets.get('Moon'), 'sign', 'Taurus').lower()
         
-        # اختيار طاقة القمر الحالية بناءً على يوم الشهر الحالي لإعطاء طابع فلكي متغير دورياً وموثوق
         transit_moon_phases = ["برج الحمل الناري", "برج الثور الترابي", "برج الجوزاء الهوائي", "برج السرطان المائي", "برج الأسد الناري", "برج العذراء الترابي"]
         current_phase = transit_moon_phases[now.day % len(transit_moon_phases)]
 
-        # صياغة التوقعات بناءً على تقاطعات العبور
         if sun_sign in ['aries', 'leo', 'sagittarius']:
             career = "🪐 عبور المريخ الحالي يدعم بيتك العاشر؛ لديك طاقة عالية لإنجاز المهام المتراكمة وفرصة لإثبات جدارتك القيادية اليوم."
-            love = "❤️ يتناغم القمر الحلي مع برجك، مما يمنحك جاذبية مضاعفة. الوقت مثالي لإنهاء الخلافات السطحية مع الحبيب."
+            love = "❤️ يتناغم القمر الحالي مع برجك، مما يمنحك جاذبية مضاعفة. الوقت مثالي لإنهاء الخلافات السطحية مع الحبيب."
             energy = "⚡ الحماس في أعلى مستوياته، لكن احذر من التسرع في اتخاذ القرارات أو ردود الأفعال المفاجئة."
         elif sun_sign in ['taurus', 'virgo', 'capricorn']:
             career = "🪐 كوكب المشتري يلقي بنظرة إيجابية على قطاعك المالي؛ قد تجد حلولاً ذكية لميزانيتك أو تتلقى تقديراً مهنياً غير متوقع."
@@ -248,7 +248,7 @@ class TransitEngine:
             career = "🪐 عطارد يثير الاتصالات والروابط المهنية في خريطتك اليوم؛ يوم حافل بالنقاشات أو الاتفاقيات المثمرة عبر الإنترنت."
             love = "❤️ قد تواجه بعض الضغوط أو سوء التفاهم العابر بسبب زوايا تربيعية خفيفة، الصبر والوضوح هما مفتاح الأمان العاطفي اليوم."
             energy = "⚡ ذهنك متقد جداً ومليء بالأفكار، لكن حاول أخذ فترات راحة كافية وتجنب التشتت."
-        else: # أبراج مائية (السرطان، العقرب، الحوت)
+        else: 
             career = "🪐 زحل يدعوك لترتيب أوراقك بدقة وتجنب الدخول في مغامرات مالية غير مدروسة بعناية."
             love = "❤️ القمر يعبر في بيت المشاعر العميقة لديك؛ عواطفك جياشة وحدسك مرتفع للغاية مما يجعلك تفهم مشاعر الشريك دون أن يتحدث."
             energy = "⚡ طاقة روحانية ونفسية ممتازة، بينما قد تحتاج طاقة جسدك إلى النوم الكافي والاسترخاء."
@@ -262,7 +262,7 @@ class TransitEngine:
             f"❤️ **الجانب العاطفي والعلاقات:**\n{love}\n\n"
             f"⚡ **مستويات الطاقة والنصيحة النفسية:**\n{energy}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"✨ *العبور الفلكي يمثل الطقس العام في السماء, وقدرتك على التكيف والوعي هي ما يوجه الأحداث لصالحك دائماً.*"
+            f"✨ *العبور الفلكي يمثل الطقس العام في السماء، وقدرتك على التكيف والوعي هي ما يوجه الأحداث لصالحك دائماً.*"
         )
         return report
 
@@ -503,7 +503,7 @@ async def root_handler():
 # =====================================================================
 # منطق معالجة القائمة الرئيسية وأمر /start
 # =====================================================================
-get_start_keyboard():
+def get_start_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔮 قسم الأبراج والفلك", callback_data="go_astrology")],
         [InlineKeyboardButton("📖 قسم الخيرة الرقمية", callback_data="go_khira")]
@@ -655,7 +655,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         if data == "menu_daily_forecast":
             await query.answer()
-            # استدعاء محرك توقعات العبور الفلكي اليومي الحية
             forecast_report = TransitEngine.generate_daily_forecast(chart_data)
             await query.edit_message_text(forecast_report, reply_markup=astrology_back_markup, parse_mode="Markdown")
 
