@@ -43,7 +43,8 @@ engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
 
-TOKEN = "7523578617:AAHECJgxEx-9FB9GN2lWoyJJHrunbzH-BwU"
+# تعديل لجلب التوكن من متغيرات البيئة
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7523578617:AAHECJgxEx-9FB9GN2lWoyJJHrunbzH-BwU")
 WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
 telegram_app = Application.builder().token(TOKEN).build()
@@ -261,7 +262,7 @@ class TransitEngine:
             f"❤️ **الجانب العاطفي والعلاقات:**\n{love}\n\n"
             f"⚡ **مستويات الطاقة والنصيحة النفسية:**\n{energy}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"✨ *العبور الفلكي يمثل الطقس العام في السماء، وقدرتك على التكيف والوعي هي ما يوجه الأحداث لصالحك دائماً.*"
+            f"✨ *العبور الفلكي يمثل الطقس العام في السماء, وقدرتك على التكيف والوعي هي ما يوجه الأحداث لصالحك دائماً.*"
         )
         return report
 
@@ -502,7 +503,7 @@ async def root_handler():
 # =====================================================================
 # منطق معالجة القائمة الرئيسية وأمر /start
 # =====================================================================
-def get_start_keyboard():
+get_start_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔮 قسم الأبراج والفلك", callback_data="go_astrology")],
         [InlineKeyboardButton("📖 قسم الخيرة الرقمية", callback_data="go_khira")]
