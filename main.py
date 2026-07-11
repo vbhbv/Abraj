@@ -138,7 +138,6 @@ def escape_markdown_v2(text: str) -> str:
 # =====================================================================
 from concurrent.futures import ThreadPoolExecutor
 
-# ضبط ديناميكي ممتد ليتناسب مع نوى المعالج المتاحة في الاستضافة بشكل آمن
 computed_max_workers = min(32, (os.cpu_count() or 2) * 2)
 chart_executor = ThreadPoolExecutor(max_workers=computed_max_workers, thread_name_prefix="AstrologyChart")
 drawing_executor = ThreadPoolExecutor(max_workers=max(2, os.cpu_count() or 2), thread_name_prefix="ChartDrawing")
@@ -177,7 +176,7 @@ async def draw_chart_safe(drawer, adapted_chart, user_id: int) -> bytes:
         raise
 
 # =====================================================================
-# 4. محرك الـ PostgreSQL المطور بأعمدة مهيكلة (Structured Schema)
+# 4. محرك الـ PostgreSQL المطور مع نظام التحديث والترقية التلقائية
 # =====================================================================
 class AsyncUsersDatabase:
     def __init__(self):
@@ -193,25 +192,43 @@ class AsyncUsersDatabase:
                 max_queries=50000, max_inactive_connection_lifetime=300
             )
             async with self.pool.acquire() as conn:
-                # التحول بالكامل لأعمدة منفصلة صلبة وسريعة بدلاً من الـ JSONB المستهلك للمعالج
+                # 1. إنشاء الجدول الأساسي إذا لم يكن موجوداً من قبل
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_profiles (
                         user_id BIGINT PRIMARY KEY,
-                        birth_year INT NOT NULL,
-                        birth_month INT NOT NULL,
-                        birth_day INT NOT NULL,
-                        birth_hour INT NOT NULL,
-                        birth_minute INT NOT NULL,
-                        lat DECIMAL(9,6) NOT NULL,
-                        lon DECIMAL(9,6) NOT NULL,
-                        city VARCHAR(100) NOT NULL,
-                        timezone VARCHAR(50) NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                
+                # 2. فحص عمود birth_year لتحديد ما إذا كان الجدول قديماً ويحتاج لترقية (Migration)
+                column_check = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name='user_profiles' AND column_name='birth_year'
+                    );
+                """)
+                
+                if not column_check:
+                    logger.info("⚠️ [Migration] Old or basic schema detected! Injecting structured columns...")
+                    await conn.execute("""
+                        ALTER TABLE user_profiles 
+                        ADD COLUMN IF NOT EXISTS birth_year INT DEFAULT 1990,
+                        ADD COLUMN IF NOT EXISTS birth_month INT DEFAULT 1,
+                        ADD COLUMN IF NOT EXISTS birth_day INT DEFAULT 1,
+                        ADD COLUMN IF NOT EXISTS birth_hour INT DEFAULT 12,
+                        ADD COLUMN IF NOT EXISTS birth_minute INT DEFAULT 0,
+                        ADD COLUMN IF NOT EXISTS lat DECIMAL(9,6) DEFAULT 33.3152,
+                        ADD COLUMN IF NOT EXISTS lon DECIMAL(9,6) DEFAULT 44.3661,
+                        ADD COLUMN IF NOT EXISTS city VARCHAR(100) DEFAULT 'Baghdad',
+                        ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'Asia/Baghdad';
+                    """)
+                    logger.info("✅ [Migration] New structured columns injected successfully.")
+
+                # 3. التأكد من وجود الفهرس لتسريع استعلامات البحث
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_search ON user_profiles(user_id);")
-            logger.info("✅ Async PostgreSQL Pool initialized with fast Structured Columns Schema.")
+                
+            logger.info("✅ Async PostgreSQL Pool initialized with auto-migration safety guards.")
         except Exception as e:
             logger.critical(f"Database connection pool initiation failed: {e}", exc_info=True)
             raise e
@@ -238,7 +255,6 @@ class AsyncUsersDatabase:
         if not self.pool: return
         async def _save():
             async with self.pool.acquire() as conn:
-                # دمج تحديث last_active مع عملية الإدخال أو التعديل المباشر لمنع الـ Writes الزائدة
                 await conn.execute("""
                     INSERT INTO user_profiles (
                         user_id, birth_year, birth_month, birth_day, birth_hour, birth_minute, lat, lon, city, timezone, last_active
@@ -252,7 +268,6 @@ class AsyncUsersDatabase:
         await self.execute_with_retry(_save)
 
     async def update_active_heartbeat(self, user_id: int):
-        """تحديث دوري منفصل عند العمليات الأساسية الكبرى وليس مع كل استدعاء لقراءة الكاش"""
         if not self.pool: return
         async def _heartbeat():
             async with self.pool.acquire() as conn:
@@ -286,7 +301,7 @@ class AsyncUsersDatabase:
 async_db = AsyncUsersDatabase()
 
 # =====================================================================
-# 5. محرك الجغرافيا الموسع وتحديد المنطقة الزمنية لمرة واحدة (Timezone Caching)
+# 5. محرك الجغرافيا وتحديد المنطقة الزمنية لمرة واحدة (Timezone Caching)
 # =====================================================================
 class EnhancedGeocodingEngine:
     def __init__(self):
@@ -346,16 +361,16 @@ def convert_local_time_to_utc(user_data: dict, lat: float, lon: float) -> dateti
 async def get_or_compute_user_chart(user_id: int, user_profile: dict, engine) -> Optional[Any]:
     cache_key = generate_blake2_key(user_id, user_profile, "natal")
     
-    # فحص الكاش السريع الأولي
+    # فحص الكاش المبدئي
     cached_data = CHART_CACHE.get(cache_key)
     if cached_data:
         METRICS["cache_hits"] += 1
         return cached_data
         
-    # جلب القفل الخاص بهذا المفتاح لمنع الـ Stampede كلياً وسد ثغرات السباق
+    # جلب القفل الخاص الثابت لمنع الـ Cache Stampede وسد ثغرة السباق
     key_lock = get_per_key_lock(cache_key)
     async with key_lock:
-        # التحقق المزدوج (Double Check)
+        # التحقق المزدوج الذكي (Double Check Lock)
         cached_data = CHART_CACHE.get(cache_key)
         if cached_data:
             METRICS["cache_hits"] += 1
@@ -396,7 +411,6 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
         ]
         await telegram_app.bot.send_message(chat_id=chat_id, text=final_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
-        # تحديث النشاط بشكل منفصل للحفاظ على أداء معالجة الذاكرة لقاعدة البيانات
         asyncio.create_task(async_db.update_active_heartbeat(chat_id))
     except Exception as e:
         logger.error(f"Error executing report dispatch for user={chat_id}: {e}", exc_info=True)
@@ -429,7 +443,7 @@ async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     except ValueError:
         await update.message.reply_text("⚠️ سنة غير صالحة\\. يرجى إدخال سنة ميلاد حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
         return P2_YEAR
-    await update.message.reply_text("季度 ممتاز\\! الآن أرسل *شهر ميلاد الطرف الثاني* \\(من 1 إلى 12\\):", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("ممتاز\\! الآن أرسل *شهر ميلاد الطرف الثاني* \\(من 1 إلى 12\\):", parse_mode=ParseMode.MARKDOWN_V2)
     return P2_MONTH
 
 async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -602,16 +616,14 @@ class KhiraEngine:
 khira_engine = KhiraEngine()
 
 # =====================================================================
-# 8. إدارة الـ Lifespan، تنظيف الأقفال الخاملة لـ FastAPI
+# 8. إدارة الـ Lifespan، تنظيف الذاكرة المخبئية وتنظيف الأقفال الخاملة
 # =====================================================================
 async def cache_and_locks_garbage_collector(interval: int = 300):
-    """تنظيف الكاش منتهى الصلاحية وإزالة الأقفال الخاملة لمنع تسريب الذاكرة وتراكمها صامتاً"""
     while True:
         try:
             await asyncio.sleep(interval)
             CHART_CACHE.expire()
             
-            # تطهير القواميس البرمجية للأقفال التي لم تعد قيد الانتظار لحل ثغرات الـ Race Conditions
             initial_count = len(_fixed_key_locks)
             for k in list(_fixed_key_locks.keys()):
                 lock = _fixed_key_locks[k]
@@ -663,7 +675,6 @@ async def webhook_handler(request: Request):
 
 @app.get("/metrics")
 async def export_internal_metrics():
-    """تصدير المقاييس والعدادات للتمكين من ربطها مستقبلاً بـ Prometheus و Grafana"""
     return {
         "status": "healthy",
         "cache_capacity_used": len(CHART_CACHE),
@@ -896,7 +907,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 img_buffer.name = "natal_chart.png"
                 await telegram_app.bot.send_photo(chat_id=user_id, photo=img_buffer, caption="🪐 *عجلة خريطتك الفلكية الاحترافية كاملة الدلالات \\(Natal Wheel\\)*", reply_markup=astrology_back_markup)
             except Exception as draw_err:
-                logger.error(f"Error drawing chart for user={user_id}: {draw_err}")
+                logger.error(f"Error drawing chart for user={draw_err}")
                 await query.message.reply_text("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض\\.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as exc:
         logger.error(f"Error handling menu click for user={user_id}: {exc}")
