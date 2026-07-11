@@ -48,13 +48,13 @@ except ImportError:
         def compute_natal_chart(self, dt, lat, lon): 
             return type('MockChart', (object,), {'ascendant': 'Aries', 'planets': {}, 'houses': {}, 'aspects': []})()
     class AstrologicalInterpreter:
-        def get_minimal_summary(self, c): return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف\\.*"
-        def get_detailed_report(self, c): return "تقرير تفصيلي احترافي كاملاً من المحرك الخاص\\."
+        def get_minimal_summary(self, c): return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف.*"
+        def get_detailed_report(self, c): return "تقرير تفصيلي احترافي كاملاً من المحرك الخاص."
     class AstrologyChartDrawer:
         def generate_chart_png(self, c): return b""
     class ElectionalAstrologyEngine:
         def __init__(self, astrology_engine): pass
-        def generate_detailed_report(self, t, lat, lon): return "تقرير الاختيارات الحقيقي المتكامل\\.", None
+        def generate_detailed_report(self, t, lat, lon): return "تقرير الاختيارات الحقيقي المتكامل.", None
 
 try:
     from transit_engine import TransitEngine
@@ -63,11 +63,11 @@ except ImportError:
     class TransitEngine:
         @staticmethod
         def generate_daily_forecast(chart_data) -> str:
-            return "🪐 *تقرير العبور الفلكي الحي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nحركة القمر الحالية تدعم ترتيب أوراقك المالية والمهنية بنجاح\\."
+            return "🪐 *تقرير العبور الفلكي الحي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nحركة القمر الحالية تدعم ترتيب أوراقك المالية والمهنية بنجاح."
     class SynastryEngine:
         @staticmethod
         def calculate_compatibility(c1, c2) -> dict:
-            return {"score": 88, "verdict": "توافق فلكي ممتاز", "description": "تكامل رائع بين الشمس والقمر والزهرة في الخريطتين المقارنتين\\."}
+            return {"score": 88, "verdict": "توافق فلكي ممتاز", "description": "تكامل رائع بين الشمس والقمر والزهرة في الخريطتين المقارنتين."}
 
 try:
     from horoscope_daily import HoroscopeDailyEngine
@@ -75,7 +75,7 @@ except ImportError:
     class HoroscopeDailyEngine:
         @staticmethod
         def get_daily_forecast(sun_sign: str) -> str:
-            return f"🌟 *توقعات برجك الشمسي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nالأجواء إيجابية وداعمة لخطواتك الجديدة\\."
+            return f"🌟 *توقعات برجك الشمسي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nالأجواء إيجابية وداعمة لخطواتك الجديدة."
 
 # إعداد الـ Logging الهيكلي للإنتاج والـ Metrics
 logging.basicConfig(format='%(asctime)s - [User: %(processName)s] - %(levelname)s - %(message)s', level=logging.INFO)
@@ -107,10 +107,9 @@ WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 telegram_app = Application.builder().token(TOKEN).updater(None).rate_limiter(AIORateLimiter()).build()
 
 # =====================================================================
-# 2. إدارة الـ Cache الموحد والـ الثابت لمنع الـ Race Condition
+# 2. إدارة الـ Cache الموحد والثابت لمنع الـ Race Condition ومعالجة النصوص
 # =====================================================================
 CHART_CACHE = TTLCache(maxsize=1500, ttl=7200)
-
 _fixed_key_locks: Dict[str, asyncio.Lock] = {}
 
 def get_per_key_lock(cache_key: str) -> asyncio.Lock:
@@ -128,13 +127,15 @@ def invalidate_user_old_cache(user_id: int, prefix: str = "natal"):
         if key.startswith(f"{prefix}_{user_id}_"):
             del CHART_CACHE[key]
 
-def escape_markdown_v2(text: str) -> str:
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
-
-def safe_escape_dots_only(text: str) -> str:
-    """يقوم بهروب النقاط التي لم يتم هروبها مسبقاً لحماية MarkdownV2 من الانهيار بدون إفساد التنسيقات الأخرى"""
-    return re.sub(r'(?<!\\)\.', r'\.', text)
+def intelligent_markdown_v2_escape(text: str) -> str:
+    """يقوم بهروب محمي للرموز الحساسة في التليجرام دون المساس بتركيبة التنسيقات العريضة والمائلة الحية"""
+    if not text:
+        return ""
+    # الرموز الخاصة التي تسبب انهيار التليجرام إذا جاءت منفردة بدون هروب
+    escape_chars = r'[]()~`>#+-=|{}.!'
+    for char in escape_chars:
+        text = text.replace(char, f"\\{char}")
+    return text
 
 # =====================================================================
 # 3. مسبح الخيوط المتكيف (Dynamic Thread Pool Executor)
@@ -387,15 +388,15 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
     try:
         chart_data = await get_or_compute_user_chart(chat_id, user_data, engine)
         if chart_data is None:
-            await telegram_app.bot.send_message(chat_id=chat_id, text="❌ خطأ حرج: فشل محرك الفلك في معالجة خريطتك\\.", parse_mode=ParseMode.MARKDOWN_V2)
+            await telegram_app.bot.send_message(chat_id=chat_id, text="❌ خطأ حرج: فشل محرك الفلك في معالجة خريطتك.", parse_mode=ParseMode.MARKDOWN_V2)
             return
 
         total_score = 75
         summary_msg = interpreter.get_minimal_summary(chart_data)
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", f"{total_score}")
-        summary_msg = safe_escape_dots_only(summary_msg)
+        summary_msg = intelligent_markdown_v2_escape(summary_msg)
         
-        header = f"🗺 *المدينة والمنطقة الزمنية المسجلة:* {escape_markdown_v2(matched_city)}\n\n"
+        header = f"🗺 *المدينة والمنطقة الزمنية المسجلة:* {intelligent_markdown_v2_escape(matched_city)}\n\n"
         final_msg = header + summary_msg
 
         keyboard = [
@@ -412,7 +413,7 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         asyncio.create_task(async_db.update_active_heartbeat(chat_id))
     except Exception as e:
         logger.error(f"Error executing report dispatch for user={chat_id}: {e}", exc_info=True)
-        await telegram_app.bot.send_message(chat_id=chat_id, text="❌ عذراً، حدث خطأ داخلي أثناء معالجة بياناتك\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await telegram_app.bot.send_message(chat_id=chat_id, text="❌ عذراً، حدث خطأ داخلي أثناء معالجة بياناتك.", parse_mode=ParseMode.MARKDOWN_V2)
 
 # =====================================================================
 # 6. مسارات الـ Conversations (المواليد، التوافق، الاختيارات)
@@ -424,12 +425,12 @@ async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAUL
 
     saved_profile = await async_db.get_user_profile(user_id)
     if not saved_profile:
-        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الشخصية أولاً وتسجيل بيانات ميلادك قبل استخدام ميزة التوافق\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الشخصية أولاً وتسجيل بيانات ميلادك قبل استخدام ميزة التوافق.", parse_mode=ParseMode.MARKDOWN_V2)
         return ConversationHandler.END
 
     await query.edit_message_text(
-        "💞 *قسم قياس التوافق والانسجام الفلكي \\(Synastry\\)* 💞\n\n"
-        "أرسل *سنة ميلاد الطرف الثاني* بالأرقام \\(مثال: `2000`\\):", parse_mode=ParseMode.MARKDOWN_V2
+        "💞 *قسم قياس التوافق والانسجام الفلكي (Synastry)* 💞\n\n"
+        "أرسل *سنة ميلاد الطرف الثاني* بالأرقام (مثال: `2000`):", parse_mode=ParseMode.MARKDOWN_V2
     )
     return P2_YEAR
 
@@ -439,9 +440,9 @@ async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1900 <= val <= datetime.now().year + 1): raise ValueError()
         context.user_data['p2_year'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ سنة غير صالحة\\. يرجى إدخال سنة ميلاد حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("⚠️ سنة غير صالحة. يرجى إدخال سنة ميلاد حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
         return P2_YEAR
-    await update.message.reply_text("ممتاز\\! الآن أرسل *شهر ميلاد الطرف الثاني* \\(من 1 إلى 12\\):", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("ممتاز! الآن أرسل *شهر ميلاد الطرف الثاني* (من 1 إلى 12):", parse_mode=ParseMode.MARKDOWN_V2)
     return P2_MONTH
 
 async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -450,9 +451,9 @@ async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 12): raise ValueError()
         context.user_data['p2_month'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ شهر غير صالح\\. يرجى إدخال رقم من 1 إلى 12:", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("⚠️ شهر غير صالح. يرجى إدخال رقم من 1 إلى 12:", parse_mode=ParseMode.MARKDOWN_V2)
         return P2_MONTH
-    await update.message.reply_text("🗓 أرسل الآن *يوم ميلاد الطرف الثاني* برقم من \\(1 إلى 31\\):", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("🗓 أرسل الآن *يوم ميلاد الطرف الثاني* برقم من (1 إلى 31):", parse_mode=ParseMode.MARKDOWN_V2)
     return P2_DAY
 
 async def p2_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -461,7 +462,7 @@ async def p2_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 31): raise ValueError()
         context.user_data['p2_day'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ يوم غير صالح\\. يرجى إدخال رقم اليوم من 1 إلى 31:", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم من 1 إلى 31:", parse_mode=ParseMode.MARKDOWN_V2)
         return P2_DAY
     keyboard = [[InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="p2_knows_true")], [InlineKeyboardButton("❌ لا، غير معروف", callback_data="p2_knows_false")]]
     await update.message.reply_text("🕒 هل تعرف *وقت ولادة الطرف الثاني* بدقة؟", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
@@ -471,7 +472,7 @@ async def p2_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     query = update.callback_query
     await query.answer()
     if query.data == "p2_knows_true":
-        await query.edit_message_text("🕓 أرسل وقت ولادة الطرف الثاني بتنسيق 24 ساعة \\(ساعة:دقيقة\\) مثال: `21:15`:", parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text("🕓 أرسل وقت ولادة الطرف الثاني بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `21:15`:", parse_mode=ParseMode.MARKDOWN_V2)
         return P2_TIME
     else:
         context.user_data['p2_hour'], context.user_data['p2_minute'] = 12, 0
@@ -509,14 +510,14 @@ async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     res = SynastryEngine.calculate_compatibility(chart1, chart2)
 
-    description_escaped = safe_escape_dots_only(res['description'])
-    verdict_escaped = safe_escape_dots_only(res['verdict'])
+    description_escaped = intelligent_markdown_v2_escape(res['description'])
+    verdict_escaped = intelligent_markdown_v2_escape(res['verdict'])
 
     report_text = (
-        f"💞 *تقرير توافق الأبراج والخرائط الفلكية \\(Synastry\\)* 💞\n"
+        f"💞 *تقرير توافق الأبراج والخرائط الفلكية (Synastry)* 💞\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📊 *نسبة التوافق الإجمالية:* ` {res['score']}% `\n"
-        f"الحالة الفلكية: {escape_markdown_v2(verdict_escaped)}\n\n"
+        f"الحالة الفلكية: {verdict_escaped}\n\n"
         f"💬 *التحليل الفلكي والمقارن للعلاقة:*\n"
         f"{description_escaped}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━"
@@ -533,12 +534,12 @@ async def electional_trigger_workflow(update: Update, context: ContextTypes.DEFA
 
     saved_profile = await async_db.get_user_profile(user_id)
     if not saved_profile:
-        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الفردية الشخصية أولاً قبل استخدام محرك الاختيارات\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الفردية الشخصية أولاً قبل استخدام محرك الاختيارات.", parse_mode=ParseMode.MARKDOWN_V2)
         return ConversationHandler.END
 
     await query.edit_message_text(
         "🔮 *محرك الاختيارات الفلكية وجدولة القرارات الحية* 🔮\n\n"
-        "اكتب الآن بأسلوبك ونصك الحر القرار أو الخطوة التي تنوي الإقدام عليها ليتسنى قياس زوايا الفلك لبلدك جغرافياً\\.", parse_mode=ParseMode.MARKDOWN_V2
+        "اكتب الآن بأسلوبك ونصك الحر القرار أو الخطوة التي تنوي الإقدام عليها ليتسنى قياس زوايا الفلك لبلدك جغرافياً.", parse_mode=ParseMode.MARKDOWN_V2
     )
     return ELECTIONAL_QUERY
 
@@ -551,10 +552,10 @@ async def handle_electional_query_analysis(update: Update, context: ContextTypes
     lon = saved_profile.get("lon", 44.3661)
     
     report_text, _ = electional_engine.generate_detailed_report(user_text, lat, lon)
-    report_escaped = safe_escape_dots_only(report_text)
+    report_escaped = intelligent_markdown_v2_escape(report_text)
     
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
-    await update.message.reply_text(escape_markdown_v2(report_escaped), reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(report_escaped, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
 # =====================================================================
@@ -700,7 +701,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 async def khira_start_from_menu(query: Any, context: ContextTypes.DEFAULT_TYPE):
-    welcome_khira = "✨ *خدمة الخيرة والاستخارة الرقمية المحصنة بالبصمة الحسابية الموحدة* ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة، ثم اضغط على الزر أدناه لبدء الخيرة\\."
+    welcome_khira = "✨ *خدمة الخيرة والاستخارة الرقمية المحصنة بالبصمة الحسابية الموحدة* ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة، ثم اضغط على الزر أدناه لبدء الخيرة."
     await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN_V2)
 
 async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -710,12 +711,12 @@ async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAU
     
     saved_profile = await async_db.get_user_profile(user_id)
     if saved_profile:
-        await query.edit_message_text("✨ تم العثور على بيانات ميلادك المسجلة سابقاً\\! جاري الاستخراج فوراً\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text("✨ تم العثور على بيانات ميلادك المسجلة سابقاً! جاري الاستخراج فوراً...", parse_mode=ParseMode.MARKDOWN_V2)
         context.user_data.update(saved_profile)
         await process_and_send_astrology_report(chat_id=user_id, user_data=saved_profile, matched_city=saved_profile.get('city', 'Baghdad'))
         return ConversationHandler.END
     
-    await query.edit_message_text("🔮 *نظام التحليل الفلكي الشامل*\n\nابدأ بإرسال *سنة ميلادك* بالأرقام \\(مثال: `1998`\\):", parse_mode=ParseMode.MARKDOWN_V2)
+    await query.edit_message_text("🔮 *نظام التحليل الفلكي الشامل*\n\nابدأ بإرسال *سنة ميلادك* بالأرقام (مثال: `1998`):", parse_mode=ParseMode.MARKDOWN_V2)
     return YEAR
 
 async def p_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -724,9 +725,9 @@ async def p_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1900 <= val <= datetime.now().year + 1): raise ValueError()
         context.user_data['year'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ سنة غير صالحة\\. أرسل سنة حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("⚠️ سنة غير صالحة. أرسل سنة حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
         return YEAR
-    await update.message.reply_text("📆 ممتاز\\! الآن أرسل *شهر ميلادك* \\(رقم من 1 إلى 12\\):", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("📆 ممتاز! الآن أرسل *شهر ميلادك* (رقم من 1 إلى 12):", parse_mode=ParseMode.MARKDOWN_V2)
     return MONTH
 
 async def p_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -735,9 +736,9 @@ async def p_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 12): raise ValueError()
         context.user_data['month'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ شهر غير صالح\\. يرجى إدخال رقم شهر حقيقي بين 1 و 12:", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("⚠️ شهر غير صالح. يرجى إدخال رقم شهر حقيقي بين 1 و 12:", parse_mode=ParseMode.MARKDOWN_V2)
         return MONTH
-    await update.message.reply_text("🗓 رائع\\! أرسل الآن *يوم ميلادك* برقم من \\(1 إلى 31\\):", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("🗓 رائع! أرسل الآن *يوم ميلادك* برقم من (1 إلى 31):", parse_mode=ParseMode.MARKDOWN_V2)
     return DAY
 
 async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -746,7 +747,7 @@ async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 31): raise ValueError()
         context.user_data['day'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ يوم غير صالح\\. يرجى إدخال رقم اليوم بشكل صحيح:", parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم بشكل صحيح:", parse_mode=ParseMode.MARKDOWN_V2)
         return DAY
     keyboard = [[InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="knows_true")], [InlineKeyboardButton("❌ لا، غير معروف", callback_data="knows_false")]]
     await update.message.reply_text("🕒 هل تعرف *وقت ولادتك الدقيق*؟", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
@@ -756,7 +757,7 @@ async def p_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query = update.callback_query
     await query.answer()
     if query.data == "knows_true":
-        await query.edit_message_text("🕓 أرسل وقت الولادة بتنسيق 24 ساعة \\(ساعة:دقيقة\\) مثال: `18:45`:", parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text("🕓 أرسل وقت الولادة بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `18:45`:", parse_mode=ParseMode.MARKDOWN_V2)
         return TIME
     else:
         context.user_data['hour'], context.user_data['minute'] = 12, 0
@@ -806,7 +807,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await async_db.delete_user_profile(user_id)
         invalidate_user_old_cache(user_id, "natal")
         context.user_data.clear()
-        await query.edit_message_text("🗑 تم مسح بيانات ميلادك السابقة بنجاح من قاعدة البيانات\\.\nيرجى إعادة إرسال /start لتسجيل بياناتك الحية من جديد\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]]), parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text("🗑 تم مسح بيانات ميلادك السابقة بنجاح من قاعدة البيانات.\nيرجى إعادة إرسال /start لتسجيل بياناتك الحية من جديد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     elif data in ["go_khira", "khira_back"]:
@@ -826,20 +827,19 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         chosen = khira_engine.get_seeded_khira(user_id, saved_profile)
-        result_text = f"🔮 *نتيجـة الخيـرة الخاصـة بك لهذا اليوم*\n━━━━━━━━━━━━━━━━━━━━\n\n📖 *الآية الشريفة:*\n__{escape_markdown_v2(chosen.get('verse', ''))}__\n\n📊 *الحكم والدرجة:*\nدرجة التيسير: {escape_markdown_v2(chosen.get('stars', ''))}\n\n💬 *التوجيه والتفسير:*\n{escape_markdown_v2(chosen.get('interpretation', ''))}\n\n🤲 *الدعاء المستحب:*\n_{escape_markdown_v2(chosen.get('dua', ''))}_\n\n━━━━━━━━━━━━━━━━━━━━"
-        result_text = safe_escape_dots_only(result_text)
+        result_text = f"🔮 *نتيجـة الخيـرة الخاصـة بك لهذا اليوم*\n━━━━━━━━━━━━━━━━━━━━\n\n📖 *الآية الشريفة:*\n__{intelligent_markdown_v2_escape(chosen.get('verse', ''))}__\n\n📊 *الحكم والدرجة:*\nدرجة التيسير: {intelligent_markdown_v2_escape(chosen.get('stars', ''))}\n\n💬 *التوجيه والتفسير:*\n{intelligent_markdown_v2_escape(chosen.get('interpretation', ''))}\n\n🤲 *الدعاء المستحب:*\n_{intelligent_markdown_v2_escape(chosen.get('dua', ''))}_\n\n━━━━━━━━━━━━━━━━━━━━"
         await query.edit_message_text(result_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     elif data == "khira_rules":
         await query.answer()
-        rules_text = "📜 *آداب وشروط عمل الخيرة:*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ *النية الصادقة والوضوء*\n2️⃣ *عدم التكرار في نفس الأمر في ذات اليوم*\n3️⃣ *الرضا بالنتيجة وتسليم الأمر لله\\.*"
+        rules_text = "📜 *آداب وشروط عمل الخيرة:*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ *النية الصادقة والوضوء*\n2️⃣ *عدم التكرار في نفس الأمر في ذات اليوم*\n3️⃣ *الرضا بالنتيجة وتسليم الأمر لله.*"
         await query.edit_message_text(rules_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     saved_profile = await async_db.get_user_profile(user_id)
     if not saved_profile:
-        await query.message.reply_text("❌ لم يتم العثور على بيانات، اضغط على /start لبدء الحساب مجدداً\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await query.message.reply_text("❌ لم يتم العثور على بيانات، اضغط على /start لبدء الحساب مجدداً.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     chart_data = await get_or_compute_user_chart(user_id, saved_profile, engine)
@@ -861,21 +861,21 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if hasattr(chart_data, 'planets') and chart_data.planets and chart_data.planets.get('Sun'):
                 sun_sign = getattr(chart_data.planets.get('Sun'), 'sign', 'Aries')
             horoscope_report = HoroscopeDailyEngine.get_daily_forecast(sun_sign)
-            horoscope_report = safe_escape_dots_only(horoscope_report)
-            await query.edit_message_text(escape_markdown_v2(horoscope_report), reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+            horoscope_report = intelligent_markdown_v2_escape(horoscope_report)
+            await query.edit_message_text(horoscope_report, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
         elif data == "menu_daily_forecast":
             await query.answer()
             forecast_report = TransitEngine.generate_daily_forecast(chart_data)
-            forecast_report = safe_escape_dots_only(forecast_report)
-            await query.edit_message_text(escape_markdown_v2(forecast_report), reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+            forecast_report = intelligent_markdown_v2_escape(forecast_report)
+            await query.edit_message_text(forecast_report, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
         elif data == "menu_read_all":
             await query.answer()
             full_report = interpreter.get_detailed_report(chart_data)
-            full_report = safe_escape_dots_only(full_report)
+            full_report = intelligent_markdown_v2_escape(full_report)
             asc_sign = getattr(chart_data, 'ascendant', 'Aries')
-            complete_analysis = f"🪐 *التقرير الفلكي الشامل والكامل لخريطتك* 🪐\n━━━━━━━━━━━━━━━━━━━━\n• *البرج الصاعد \\(الطالع\\):* {escape_markdown_v2(asc_sign)}\n━━━━━━━━━━━━━━━━━━━━\n\n{full_report}"
+            complete_analysis = f"🪐 *التقرير الفلكي الشامل والكامل لخريطتك* 🪐\n━━━━━━━━━━━━━━━━━━━━\n• *البرج الصاعد (الطالع):* {intelligent_markdown_v2_escape(asc_sign)}\n━━━━━━━━━━━━━━━━━━━━\n\n{full_report}"
             
             if len(complete_analysis) > 4000:
                 parts = [complete_analysis[i:i+4000] for i in range(0, len(complete_analysis), 4000)]
@@ -906,20 +906,20 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 img_bytes_data = await draw_chart_safe(drawer, adapted_chart, user_id)
                 
                 if not img_bytes_data:
-                    await query.message.reply_text("⚠️ المحرك لم يقم بتوليد مخرجات رسومية صالحة حالياً\\.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                    await query.message.reply_text("⚠️ المحرك لم يقم بتوليد مخرجات رسومية صالحة حالياً.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
                     return
 
                 img_buffer = io.BytesIO(img_bytes_data)
                 img_buffer.name = "natal_chart.png"
-                await telegram_app.bot.send_photo(chat_id=user_id, photo=img_buffer, caption="🪐 *عجلة خريطتك الفلكية الاحترافية كاملة الدلالات \\(Natal Wheel\\)*", reply_markup=astrology_back_markup)
+                await telegram_app.bot.send_photo(chat_id=user_id, photo=img_buffer, caption="🪐 *عجلة خريطتك الفلكية الاحترافية كاملة الدلالات (Natal Wheel)*", reply_markup=astrology_back_markup)
             except Exception as draw_err:
                 logger.error(f"Error drawing chart for user={draw_err}")
-                await query.message.reply_text("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض\\.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                await query.message.reply_text("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as exc:
         logger.error(f"Error handling menu click for user={user_id}: {exc}")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("🚫 تم إلغاء العملية الحالية بنجاح\\. ارسل /start للبدء مجدداً\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text("🚫 تم إلغاء العملية الحالية بنجاح. ارسل /start للبدء مجدداً.", parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
 # =====================================================================
@@ -934,7 +934,7 @@ conv_handler = ConversationHandler(
     states={
         YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_year)],
         MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_month)],
-        DAY: [filters.TEXT & ~filters.COMMAND, p_day],
+        DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_day)],
         KNOWS_TIME: [CallbackQueryHandler(p_knows_time)],
         TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_time)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_location)],
