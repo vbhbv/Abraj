@@ -10,7 +10,7 @@ Astrology) وحسابات فلكية-رياضية صريحة. لا يوجد أي
 أهم الإضافات التقنية مقارنة بالنسخة السابقة:
     1) الكرامات الأساسية الخمس كاملة (Domicile / Exaltation / Triplicity /
        Term / Face) بدل بيت وشرف فقط، مع جدول الحدود المصرية (Egyptian
-       Terms) وجدول الوجوه الكلداني (Chaldean Faces) الكاملين.
+       Terms) وجدول الوجوه الكلداني (Chالداني Faces) الكاملين.
     2) الكرامات العرضية (Accidental Dignity): زاوية البيت، السرعة/البطء،
        الاتجاه المباشر/التراجعي/التوقف (Station)، الاحتراق التام مقابل
        الكازيمي (Cazimi) مقابل "تحت الأشعة" (Under the Beams)، والحصار
@@ -18,7 +18,7 @@ Astrology) وحسابات فلكية-رياضية صريحة. لا يوجد أي
     3) رصد القِران المتبادل (Mutual Reception) بين الكواكب الحاكمة.
     4) حساب الشروق والغروب الفلكي الحقيقي لأي إحداثيات جغرافية عبر معادلة
        الشروق/الغروب القياسية (Sunrise Equation)، ثم اشتقاق الساعات
-       الكوكبية غير المتساوية (Unequal/Planetary Hours) منها بدل افتراض
+       العربية غير المتساوية (Unequal/Planetary Hours) منها بدل افتراض
        شروق ثابت الساعة 6:00.
     5) منازل القمر الثماني والعشرون (منازل القمر العربية التقليدية) كطبقة
        معلوماتية إضافية على موضع القمر.
@@ -380,49 +380,49 @@ class ElectionalAstrologyEngine:
 
         self.decision_rules: Dict[str, Dict[str, Any]] = {
             "financial": {
-                "name": "الجانب المالي، الاستثماري والتجاري",
+                "name": "الجانب المالي والاستثماري",
                 "ruling_planets": ["Jupiter", "Venus", "Mercury"],
                 "preferred_houses": [2, 8, 10, 11],
                 "moon_signs": ["Taurus", "Virgo", "Capricorn", "Cancer"],
                 "allow_waning": False,
                 "critical_planets": ["Mercury", "Jupiter"],
-                "description": "تأسيس الشركات، الاستثمار، توقيع العقود، وشراء النطاقات الرقمية والمتاجر.",
+                "description": "تأسيس المشاريع، توقيع العقود التجارية، الاستثمار، وشراء النطاقات والمتاجر.",
             },
             "emotional": {
-                "name": "الجانب العاطفي، العلاقات والزواج",
+                "name": "الجانب العاطفي والعلاقات",
                 "ruling_planets": ["Venus", "Moon"],
                 "preferred_houses": [5, 7, 11],
                 "moon_signs": ["Taurus", "Cancer", "Libra", "Pisces"],
                 "allow_waning": False,
                 "critical_planets": ["Venus", "Moon"],
-                "description": "عقد القران، الخطوبة، المصالحات، وتعميق الروابط الاجتماعية والدبلوماسية.",
+                "description": "عقد القران، الخطوبة، الزواج، المصالحات، وتعميق الروابط الاجتماعية.",
             },
             "confrontation": {
-                "name": "المواجهات، القضايا والإنهاء والتخلص",
+                "name": "المواجهات والقضايا والإنهاء",
                 "ruling_planets": ["Mars", "Saturn"],
                 "preferred_houses": [6, 8, 12],
                 "moon_signs": ["Aries", "Scorpio", "Capricorn"],
                 "allow_waning": True,
                 "critical_planets": ["Mars"],
-                "description": "رفع القضايا، بتر العلاقات السامة، وتوقيت العمليات الجراحية والاستئصال.",
+                "description": "رفع الدعاوى القضائية، إنهاء العلاقات السامة، والعمليات الجراحية والاستئصال.",
             },
             "intellectual": {
-                "name": "الدراسة، التفكير، التأليف والنشر الفلسفي",
+                "name": "الجانب الفكري والتأليف والنشر",
                 "ruling_planets": ["Mercury", "Jupiter"],
                 "preferred_houses": [3, 9],
                 "moon_signs": ["Gemini", "Libra", "Aquarius", "Virgo"],
                 "allow_waning": False,
                 "critical_planets": ["Mercury"],
-                "description": "البدء بالدراسات، تأليف الكتب والبحوث، وإطلاق المنصات الفكرية والأرشيفية.",
+                "description": "بدء الدراسات والأبحاث، تأليف الكتب، وإطلاق المنصات الفكرية والأرشيفية.",
             },
             "general": {
-                "name": "الأمور العامة والخطوات اليومية الاعتيادية",
+                "name": "الأمور اليومية العامة",
                 "ruling_planets": ["Sun", "Jupiter"],
                 "preferred_houses": [1, 5, 9],
                 "moon_signs": ZODIAC_SIGNS,
                 "allow_waning": False,
                 "critical_planets": ["Sun"],
-                "description": "الخطوات اليومية العادية التي تتطلب بركة ودعم فلكي عام.",
+                "description": "الخطوات الاعتيادية والشراء الشخصي الاستهلاكي الذي يتطلب تيسيراً بركة عامة.",
             },
         }
 
@@ -439,6 +439,11 @@ class ElectionalAstrologyEngine:
     # -----------------------------------------------------------------
     def classify_user_intent(self, user_text: str) -> str:
         text = (user_text or "").lower().strip()
+        
+        # حماية إضافية ذكية للمشتريات التقنية والشخصية البسيطة لكي لا تُصنف كاستثمار تجاري ضخم
+        if any(tech in text for tech in ["ايفون", "آيفون", "جوال", "هاتف", "تلفون", "كمبيوتر", "لابتوب"]):
+            return "general"
+            
         for intent, keys in self._intent_keywords.items():
             if any(key in text for key in keys):
                 return intent
@@ -543,22 +548,22 @@ class ElectionalAstrologyEngine:
             elif is_retrograde:
                 result.retrograde = True
                 result.score += self.WEIGHTS["retrograde"]
-                result.notes.append(f"{planet} متراجع - تأخير، مراجعة، أو عودة لملفات/أشخاص من الماضي.")
+                result.notes.append(f"{planet} متراجع - تأخير أو عودة لملفات من الماضي.")
 
         if planet != "Sun":
             sep = angular_separation(longitude, sun_longitude)
             if sep <= CAZIMI_ORB:
                 result.cazimi = True
                 result.score += self.WEIGHTS["cazimi"]
-                result.notes.append(f"{planet} في قلب الشمس (كازيمي، بعد {sep * 60:.1f} دقيقة قوسية) - تقوية استثنائية نادرة.")
+                result.notes.append(f"{planet} في قلب الشمس (كازيمي) - تقوية استثنائية عظمى ونادرة.")
             elif sep <= COMBUSTION_ORB:
                 result.combust = True
                 result.score += self.WEIGHTS["combust"]
-                result.notes.append(f"{planet} محترق تماماً (بعد {sep:.1f}° عن الشمس) - إضعاف شديد لفاعليته.")
+                result.notes.append(f"{planet} محترق تماماً بسبب قربه من الشمس - إضعاف وتعطيل لفاعليته.")
             elif sep <= UNDER_THE_BEAMS_ORB:
                 result.under_beams = True
                 result.score += self.WEIGHTS["under_beams"]
-                result.notes.append(f"{planet} تحت أشعة الشمس (بعد {sep:.1f}°) - إضعاف أخف من الاحتراق التام.")
+                result.notes.append(f"{planet} تحت أشعة الشمس - ضعف بنيوي أخف.")
 
         mars_data = all_planets.get("Mars")
         saturn_data = all_planets.get("Saturn")
@@ -571,7 +576,7 @@ class ElectionalAstrologyEngine:
             if d_mars <= 8.0 and d_sat <= 8.0 and same_side_check:
                 result.besieged_by_malefics = True
                 result.score += self.WEIGHTS["besieged"]
-                result.notes.append(f"{planet} محاصر بين المريخ وزحل (نحسين على جانبين متقابلين) - ضغط وعرقلة مزدوجة.")
+                result.notes.append(f"{planet} محاصر بين النحسين (المريخ وزحل) - ضغوط وعراقيل مزدوجة.")
 
         return result
 
@@ -611,21 +616,20 @@ class ElectionalAstrologyEngine:
                                        lat: float, lon: float) -> str:
         hours = compute_planetary_hours(target_date, lat, lon)
         if not hours:
-            return "⏳ تعذّر حساب الساعات الكوكبية الدقيقة لهذا الموقع/التاريخ (قد يكون ضمن مناطق قطبية)."
+            return "⏳ تعذّر حساب الساعات الكوكبية الدقيقة لهذا الموقع/التاريخ."
 
         for h in hours:
             if h["planet"] in ruling_planets and h["period"] == "day":
-                return (f"⏳ الساعة الكوكبية النهارية رقم {h['index']} - ساعة {h['planet']} "
-                        f"(من {h['start'].strftime('%H:%M')} إلى {h['end'].strftime('%H:%M')} بتوقيت UTC)")
+                return (f"⏳ الساعة النهارية رقم {h['index']} - ساعة {h['planet']} "
+                        f"(من {h['start'].strftime('%H:%M')} إلى {h['end'].strftime('%H:%M')} بتوقيت غرينتش)")
 
         for h in hours:
             if h["planet"] in ruling_planets:
-                return (f"⏳ الساعة الكوكبية الليلية رقم {h['index'] - 12} - ساعة {h['planet']} "
-                        f"(من {h['start'].strftime('%H:%M')} إلى {h['end'].strftime('%H:%M')} بتوقيت UTC)")
+                return (f"⏳ الساعة الليلية رقم {h['index'] - 12} - ساعة {h['planet']} "
+                        f"(من {h['start'].strftime('%H:%M')} إلى {h['end'].strftime('%H:%M')} بتوقيت غرينتش)")
 
         first = hours[0]
-        return (f"⏳ لا توجد ساعة مخصصة للكوكب الحاكم ضمن دورة اليوم، الأقرب: ساعة {first['planet']} "
-                f"(من {first['start'].strftime('%H:%M')})")
+        return (f"⏳ ساعة {first['planet']} (تبدأ من {first['start'].strftime('%H:%M')} بتوقيت غرينتش)")
 
     # -----------------------------------------------------------------
     # التقييم الفلكي الشامل (النواة التحليلية)
@@ -726,25 +730,24 @@ class ElectionalAstrologyEngine:
             mansion = get_lunar_mansion(moon_long)
             breakdown["lunar_mansion"] = mansion
             reasons.append(
-                f"🌙 القمر في المنزلة رقم {mansion['index']} ({mansion['name_ar']}) "
-                f"[{mansion['range_start_deg']}° - {mansion['range_end_deg']}°]."
+                f"🌙 القمر في منزلة ({mansion['name_ar']}) [المنزلة رقم {mansion['index']}]."
             )
 
             if moon_sign in rules["moon_signs"]:
                 score += self.WEIGHTS["moon_favorable_sign"]
-                reasons.append(f"🌙 القمر في برج مناسب لطبيعة المسعى ({ZODIAC_SIGNS_AR.get(moon_sign, moon_sign)}).")
+                reasons.append(f"🌙 القمر في برج داعم ومناسب لطبيعة مسعاك وهو برج ({ZODIAC_SIGNS_AR.get(moon_sign, moon_sign)}).")
 
             if moon_is_waning and not rules["allow_waning"]:
                 score += self.WEIGHTS["moon_waning_penalty"]
-                reasons.append("🌙 نور القمر في حالة تناقص، غير نافع لمشاريع النمو والتأسيس.")
+                reasons.append("🌙 نور القمر يتناقص، وهو ما يعيق خطوات التأسيس والنمو المستدام.")
 
             if moon_data.get("is_void_of_course", False):
                 score += self.WEIGHTS["moon_void_of_course"]
-                reasons.append("🚨 القمر خالي المسار (Void of Course) - لا اتصال تام قادم قبل مغادرة برجه؛ تجنب البدء.")
+                reasons.append("🚨 القمر خالي المسار (Void of Course)! طاقة الركود مرتفعة وتجنب البدء بالخطوة الآن.")
 
             if moon_deg >= 29.0:
                 score += self.WEIGHTS["moon_critical_degree"]
-                reasons.append("⚠️ القمر في الدرجة الأخيرة الحرجة (29°+) من برجه - طاقة متقلبة وغير مستقرة.")
+                reasons.append("⚠️ القمر في الدرجة الأخيرة الحرجة (29°+) من البرج - طاقة متقلبة وغير مستقرة.")
 
         # --- الاتصالات الحية بين الكواكب الحاكمة وبقية الفلك ---
         rulers = rules["ruling_planets"]
@@ -757,11 +760,11 @@ class ElectionalAstrologyEngine:
                     score += self.WEIGHTS["aspect_trine_sextile"]
                 elif a_type in ("square", "opposition"):
                     score += self.WEIGHTS["aspect_square_opposition"]
-                    reasons.append(f"⚡ اتصال {a_type} نحس بين {p1} و{p2} يهدد سلاسة المسعى.")
+                    reasons.append(f"⚡ اتصال تربيع أو مقابلة نحس بين {p1} و{p2} يهدد سلاسة وسهولة المسعى.")
 
         if is_eclipse_period:
             score += self.WEIGHTS["eclipse_period"]
-            reasons.append("🌑 النافذة الزمنية تقع ضمن فترة كسوف/خسوف - يُنصح بالتأجيل كقاعدة تقليدية عامة.")
+            reasons.append("🌑 النافذة الزمنية تقع تحت ظلال عاصفة الكسوف/الخسوف، ويُنصح بالتأجيل.")
 
         final_score = max(5.0, min(score, 100.0))
         breakdown["final_score"] = round(final_score, 2)
@@ -769,7 +772,7 @@ class ElectionalAstrologyEngine:
         return final_score, reasons, breakdown
 
     # -----------------------------------------------------------------
-    # التقرير الشامل النهائي
+    # التقرير الشامل النهائي (تم تعديل الكليشة لتصبح سهلة ومبسطة كلياً)
     # -----------------------------------------------------------------
     def generate_detailed_report(self, user_text: str, lat: float, lon: float,
                                   scan_days: int = 30) -> Tuple[str, str]:
@@ -804,48 +807,44 @@ class ElectionalAstrologyEngine:
             best_option["date"], rules["ruling_planets"], lat, lon
         )
         reasons_bulleted = "\n".join(f"• {r}" for r in best_option["reasons"][:6]) if best_option["reasons"] \
-            else "• اتصالات الكواكب والكرامات الأساسية في حالة اتزان مستقر مائل للسعود."
+            else "• اتصالات الكواكب والكرامات الفلكية مستقرة ومتزنة ومائلة للسعود والبركة."
 
         mansion = best_option["breakdown"].get("lunar_mansion") or {}
-        mansion_line = (
-            f"🌙 **منزلة القمر:** {mansion.get('name_ar', 'غير محددة')} "
-            f"(المنزلة رقم {mansion.get('index', '-')})" if mansion else ""
-        )
-
+        mansion_line = f"🌙 **منزلة القمر الحالية:** {mansion.get('name_ar', 'غير محددة')} (المنزلة رقم {mansion.get('index', '-')})" if mansion else ""
+        
         receptions = best_option["breakdown"].get("mutual_receptions") or []
-        reception_line = (
-            f"🤝 **قِرانات متبادلة مرصودة:** {len(receptions)}"
-            if receptions else "🤝 **قِرانات متبادلة مرصودة:** لا يوجد"
-        )
+        reception_line = f"🤝 **قِرانات التعاون المرصودة:** {len(receptions)} (كواكب تدعم بعضها تنجيمياً)" if receptions else "🤝 **قِرانات التعاون المرصودة:** لا يوجد قِران تبادلي حالي"
 
-        chart_type_line = "☀️ نهارية (Diurnal)" if best_option["breakdown"].get("is_day_chart") else "🌙 ليلية (Nocturnal)"
+        chart_type_line = "☀️ خريطة نهارية (Diurnal)" if best_option["breakdown"].get("is_day_chart") else "🌙 خريطة ليلية (Nocturnal)"
 
+        # الصياغة الكليشية المحدثة والمبسطة لتلائم جميع القراء بسلاسة واحترافية
         report_text = (
-            f"🪐 **مَحرك الاختيارات التنجيمية المتقدم - تحليل هندسي كامل** 🪐\n"
+            f"🪐 **تقرير الاختيارات الفلكية الشامل وتحليل العبور الهندسي** 🪐\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🎯 **تحليل النية والقصد:**\n"
-            f"← النطاق الحاكم: ` {rules['name']} `\n"
-            f"← التوصية الأساسية: *{rules['description']}*\n\n"
+            f"🎯 **تحليل خطوتك الحالية:**\n"
+            f"← التصنيف الدلالي المكتشف: **{rules['name']}**\n"
+            f"← طبيعة النوافذ والخطوات: *{rules['description']}*\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌟 **أفضل تاريخ فلكي للإقدام (مسح {scan_days} يوماً حياً):**\n"
-            f"📅 **التاريخ المقترح:** {best_option['date'].strftime('%Y-%m-%d')} (توقيت غرينتش)\n"
-            f"📊 **معدل التيسير والنجاح الهندسي:** ` {best_option['score']:.1f}% `\n"
-            f"🧭 **طبيعة الخريطة اللحظية:** {chart_type_line}\n"
-            f"{mansion_line}\n"
-            f"{reception_line}\n\n"
-            f"🔭 **المسوغات والشهادات الفلكية التقليدية:**\n"
+            f"🌟 **أفضل توقيت فلكي للإقدام (خلال مسح الـ {scan_days} يوماً القادمة):**\n"
+            f"📅 **اليوم المقترح والمختار:** {best_option['date'].strftime('%Y-%m-%d')} (توقيت غرينتش)\n"
+            f"📊 **معدل التيسير والنجاح الرياضي:** ` {best_option['score']:.1f}% `\n\n"
+            f"🧭 **الحالة الفلكية اللحظية الكلية:**\n"
+            f"• فئة الأفق: {chart_type_line}\n"
+            f"• {mansion_line}\n"
+            f"• {reception_line}\n\n"
+            f"🔭 **المسوغات والشهادات الفلكية التقليدية (أسباب الاختيار):**\n"
             f"{reasons_bulleted}\n\n"
-            f"⏱ **الساعة الكوكبية الذهبية الموصى بها:**\n"
+            f"⏱ **الساعة الكوكبية الذهبية الموصى بها في ذلك اليوم:**\n"
             f"{best_hour_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🛑 **أعلى فترة نحوسة (يُحذر من التوقيع أو البدء فيها):**\n"
-            f"📅 **التاريخ:** {worst_option['date'].strftime('%Y-%m-%d')} (مؤشر التيسير: {worst_option['score']:.1f}%)\n"
-            f"❌ **السبب:** هبوط أو احتراق للكواكب الحاكمة، أو خلل في كرامتها الأساسية والعرضية معاً.\n\n"
+            f"🛑 **فترة الحذر الأعلى نحوسة واحتراقاً (تجنب البدء أو التوقيع فيها):**\n"
+            f"📅 **التاريخ المحذر منه:** {worst_option['date'].strftime('%Y-%m-%d')} (مؤشر التيسير والنجاح: {worst_option['score']:.1f}%)\n"
+            f"❌ **سبب النحوسة:** هبوط أو تراجع حاد لكواكب النية، أو وقوعها تحت أشعة الاحتراق المباشرة للشمس أو ظلال الكسوف.\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ **ملاحظة منهجية:** جميع الحسابات أعلاه ناتجة عن قواعد التنجيم التقليدي الكلاسيكي "
-            f"(الكرامات الخمس، الحدود المصرية، الوجوه الكلدانية، الساعات الكوكبية المحسوبة من الشروق/الغروب "
-            f"الفعليين) دون أي توليد نصي احتمالي. هذه قواعد تراثية رمزية ولا تشكل دليلاً علمياً قطعياً على "
-            f"حتمية الأحداث المستقبلية."
+            f"⚠️ **ملاحظة منهجية:** جميع الحسابات المعروضة مستخرجة من معادلات التنجيم التقليدي الكلاسيكي "
+            f"(الكرامات الخمس، الحدود المصرية، الوجوه الكلدانية، والساعات الكوكبية المستندة للشروق والغروب الفعليين) "
+            f"بشكل حاسوبي بحت دون تدخل احتمالي. هذه الحسابات تهدف لتحديد الفترات الرمزية الأكثر توازناً، "
+            f"ولا تمثل حقائق علمية قطعية أو جزماً بحتمية الأحداث الحياتية الغيبية."
         )
 
         return report_text, decision_key
