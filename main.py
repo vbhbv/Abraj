@@ -131,7 +131,6 @@ def intelligent_markdown_v2_escape(text: str) -> str:
     """يقوم بهروب محمي للرموز الحساسة في التليجرام دون المساس بتركيبة التنسيقات العريضة والمائلة الحية"""
     if not text:
         return ""
-    # الرموز الخاصة التي تسبب انهيار التليجرام إذا جاءت منفردة بدون هروب
     escape_chars = r'[]()~`>#+-=|{}.!'
     for char in escape_chars:
         text = text.replace(char, f"\\{char}")
@@ -388,7 +387,8 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
     try:
         chart_data = await get_or_compute_user_chart(chat_id, user_data, engine)
         if chart_data is None:
-            await telegram_app.bot.send_message(chat_id=chat_id, text="❌ خطأ حرج: فشل محرك الفلك في معالجة خريطتك.", parse_mode=ParseMode.MARKDOWN_V2)
+            err_msg = intelligent_markdown_v2_escape("❌ خطأ حرج: فشل محرك الفلك في معالجة خريطتك.")
+            await telegram_app.bot.send_message(chat_id=chat_id, text=err_msg, parse_mode=ParseMode.MARKDOWN_V2)
             return
 
         total_score = 75
@@ -413,7 +413,8 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         asyncio.create_task(async_db.update_active_heartbeat(chat_id))
     except Exception as e:
         logger.error(f"Error executing report dispatch for user={chat_id}: {e}", exc_info=True)
-        await telegram_app.bot.send_message(chat_id=chat_id, text="❌ عذراً، حدث خطأ داخلي أثناء معالجة بياناتك.", parse_mode=ParseMode.MARKDOWN_V2)
+        fail_msg = intelligent_markdown_v2_escape("❌ عذراً، حدث خطأ داخلي أثناء معالجة بياناتك.")
+        await telegram_app.bot.send_message(chat_id=chat_id, text=fail_msg, parse_mode=ParseMode.MARKDOWN_V2)
 
 # =====================================================================
 # 6. مسارات الـ Conversations (المواليد، التوافق، الاختيارات)
@@ -425,13 +426,12 @@ async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAUL
 
     saved_profile = await async_db.get_user_profile(user_id)
     if not saved_profile:
-        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الشخصية أولاً وتسجيل بيانات ميلادك قبل استخدام ميزة التوافق.", parse_mode=ParseMode.MARKDOWN_V2)
+        err_profile = intelligent_markdown_v2_escape("⚠️ يجب أن تقوم بحساب خريطتك الشخصية أولاً وتسجيل بيانات ميلادك قبل استخدام ميزة التوافق.")
+        await query.edit_message_text(err_profile, parse_mode=ParseMode.MARKDOWN_V2)
         return ConversationHandler.END
 
-    await query.edit_message_text(
-        "💞 *قسم قياس التوافق والانسجام الفلكي (Synastry)* 💞\n\n"
-        "أرسل *سنة ميلاد الطرف الثاني* بالأرقام (مثال: `2000`):", parse_mode=ParseMode.MARKDOWN_V2
-    )
+    step1_msg = intelligent_markdown_v2_escape("💞 *قسم قياس التوافق والانسجام الفلكي (Synastry)* 💞\n\nأرسل *سنة ميلاد الطرف الثاني* بالأرقام (مثال: `2000`):")
+    await query.edit_message_text(step1_msg, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_YEAR
 
 async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -440,9 +440,11 @@ async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1900 <= val <= datetime.now().year + 1): raise ValueError()
         context.user_data['p2_year'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ سنة غير صالحة. يرجى إدخال سنة ميلاد حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_yr = intelligent_markdown_v2_escape("⚠️ سنة غير صالحة. يرجى إدخال سنة ميلاد حقيقية بالأرقام:")
+        await update.message.reply_text(err_yr, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_YEAR
-    await update.message.reply_text("ممتاز! الآن أرسل *شهر ميلاد الطرف الثاني* (من 1 إلى 12):", parse_mode=ParseMode.MARKDOWN_V2)
+    next_m = intelligent_markdown_v2_escape("ممتاز! الآن أرسل *شهر ميلادغ الطرف الثاني* (من 1 إلى 12):")
+    await update.message.reply_text(next_m, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_MONTH
 
 async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -451,9 +453,11 @@ async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 12): raise ValueError()
         context.user_data['p2_month'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ شهر غير صالح. يرجى إدخال رقم من 1 إلى 12:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_m = intelligent_markdown_v2_escape("⚠️ شهر غير صالح. يرجى إدخال رقم من 1 إلى 12:")
+        await update.message.reply_text(err_m, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_MONTH
-    await update.message.reply_text("🗓 أرسل الآن *يوم ميلاد الطرف الثاني* برقم من (1 إلى 31):", parse_mode=ParseMode.MARKDOWN_V2)
+    next_d = intelligent_markdown_v2_escape("🗓 أرسل الآن *يوم ميلاد الطرف الثاني* برقم من (1 إلى 31):")
+    await update.message.reply_text(next_d, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_DAY
 
 async def p2_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -462,21 +466,25 @@ async def p2_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 31): raise ValueError()
         context.user_data['p2_day'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم من 1 إلى 31:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_d = intelligent_markdown_v2_escape("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم من 1 إلى 31:")
+        await update.message.reply_text(err_d, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_DAY
     keyboard = [[InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="p2_knows_true")], [InlineKeyboardButton("❌ لا، غير معروف", callback_data="p2_knows_false")]]
-    await update.message.reply_text("🕒 هل تعرف *وقت ولادة الطرف الثاني* بدقة؟", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+    ask_t = intelligent_markdown_v2_escape("🕒 هل تعرف *وقت ولادة الطرف الثاني* بدقة؟")
+    await update.message.reply_text(ask_t, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
     return P2_KNOWS_TIME
 
 async def p2_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     if query.data == "p2_knows_true":
-        await query.edit_message_text("🕓 أرسل وقت ولادة الطرف الثاني بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `21:15`:", parse_mode=ParseMode.MARKDOWN_V2)
+        ask_time = intelligent_markdown_v2_escape("🕓 أرسل وقت ولادة الطرف الثاني بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `21:15`:")
+        await query.edit_message_text(ask_time, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_TIME
     else:
         context.user_data['p2_hour'], context.user_data['p2_minute'] = 12, 0
-        await query.edit_message_text("📍 أرسل *اسم مدينة ميلاد الطرف الثاني* باللغة العربية أو الإنجليزية:", parse_mode=ParseMode.MARKDOWN_V2)
+        ask_loc = intelligent_markdown_v2_escape("📍 أرسل *اسم مدينة ميلاد الطرف الثاني* باللغة العربية أو الإنجليزية:")
+        await query.edit_message_text(ask_loc, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_LOCATION
 
 async def p2_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -486,9 +494,11 @@ async def p2_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (0 <= hour <= 23 and 0 <= minute <= 59): raise ValueError()
         context.user_data['p2_hour'], context.user_data['p2_minute'] = hour, minute
     except ValueError:
-        await update.message.reply_text("⚠️ تنسيق غير صحيح، يرجى إرساله مجدداً مثل `14:30`:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_t = intelligent_markdown_v2_escape("⚠️ تنسيق غير صحيح، يرجى إرساله مجدداً مثل `14:30`:")
+        await update.message.reply_text(err_t, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_TIME
-    await update.message.reply_text("📍 أرسل *اسم مدينة ميلاد الطرف الثاني* باللغة العربية أو الإنجليزية:", parse_mode=ParseMode.MARKDOWN_V2)
+    ask_loc = intelligent_markdown_v2_escape("📍 أرسل *اسم مدينة ميلاد الطرف الثاني* باللغة العربية أو الإنجليزية:")
+    await update.message.reply_text(ask_loc, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_LOCATION
 
 async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -534,13 +544,12 @@ async def electional_trigger_workflow(update: Update, context: ContextTypes.DEFA
 
     saved_profile = await async_db.get_user_profile(user_id)
     if not saved_profile:
-        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الفردية الشخصية أولاً قبل استخدام محرك الاختيارات.", parse_mode=ParseMode.MARKDOWN_V2)
+        err_profile = intelligent_markdown_v2_escape("⚠️ يجب أن تقوم بحساب خريطتك الفردية الشخصية أولاً قبل استخدام محرك الاختيارات.")
+        await query.edit_message_text(err_profile, parse_mode=ParseMode.MARKDOWN_V2)
         return ConversationHandler.END
 
-    await query.edit_message_text(
-        "🔮 *محرك الاختيارات الفلكية وجدولة القرارات الحية* 🔮\n\n"
-        "اكتب الآن بأسلوبك ونصك الحر القرار أو الخطوة التي تنوي الإقدام عليها ليتسنى قياس زوايا الفلك لبلدك جغرافياً.", parse_mode=ParseMode.MARKDOWN_V2
-    )
+    trigger_msg = intelligent_markdown_v2_escape("🔮 *محرك الاختيارات الفلكية وجدولة القرارات الحية* 🔮\n\nاكتب الآن بأسلوبك ونصك الحر القرار أو الخطوة التي تنوي الإقدام عليها ليتسنى قياس زوايا الفلك لبلدك جغرافياً.")
+    await query.edit_message_text(trigger_msg, parse_mode=ParseMode.MARKDOWN_V2)
     return ELECTIONAL_QUERY
 
 async def handle_electional_query_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -696,12 +705,12 @@ def get_start_keyboard():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
-    welcome_text = "🔮 *مرحباً بك في البوت الفلكي الشامل عالي الاعتمادية للإنتاج* 🔮\n\nالرجاء اختيار القسم من الأزرار أدناه:"
+    welcome_text = intelligent_markdown_v2_escape("🔮 مرحباً بك في البوت الفلكي الشامل عالي الاعتمادية للإنتاج 🔮\n\nالرجاء اختيار القسم من الأزرار أدناه:")
     await update.message.reply_text(welcome_text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
 async def khira_start_from_menu(query: Any, context: ContextTypes.DEFAULT_TYPE):
-    welcome_khira = "✨ *خدمة الخيرة والاستخارة الرقمية المحصنة بالبصمة الحسابية الموحدة* ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة، ثم اضغط على الزر أدناه لبدء الخيرة."
+    welcome_khira = intelligent_markdown_v2_escape("✨ خدمة الخيرة والاستخارة الرقمية المحصنة بالبصمة الحسابية الموحدة ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة، ثم اضغط على الزر أدناه لبدء الخيرة.")
     await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN_V2)
 
 async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -711,12 +720,14 @@ async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAU
     
     saved_profile = await async_db.get_user_profile(user_id)
     if saved_profile:
-        await query.edit_message_text("✨ تم العثور على بيانات ميلادك المسجلة سابقاً! جاري الاستخراج فوراً...", parse_mode=ParseMode.MARKDOWN_V2)
+        found_msg = intelligent_markdown_v2_escape("✨ تم العثور على بيانات ميلادك المسجلة سابقاً! جاري الاستخراج فوراً...")
+        await query.edit_message_text(found_msg, parse_mode=ParseMode.MARKDOWN_V2)
         context.user_data.update(saved_profile)
         await process_and_send_astrology_report(chat_id=user_id, user_data=saved_profile, matched_city=saved_profile.get('city', 'Baghdad'))
         return ConversationHandler.END
     
-    await query.edit_message_text("🔮 *نظام التحليل الفلكي الشامل*\n\nابدأ بإرسال *سنة ميلادك* بالأرقام (مثال: `1998`):", parse_mode=ParseMode.MARKDOWN_V2)
+    start_astro = intelligent_markdown_v2_escape("🔮 نظام التحليل الفلكي الشامل\n\nابدأ بإرسال سنة ميلادك بالأرقام (مثال: 1998):")
+    await query.edit_message_text(start_astro, parse_mode=ParseMode.MARKDOWN_V2)
     return YEAR
 
 async def p_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -725,9 +736,11 @@ async def p_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1900 <= val <= datetime.now().year + 1): raise ValueError()
         context.user_data['year'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ سنة غير صالحة. أرسل سنة حقيقية بالأرقام:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_yr = intelligent_markdown_v2_escape("⚠️ سنة غير صالحة. أرسل سنة حقيقية بالأرقام:")
+        await update.message.reply_text(err_yr, parse_mode=ParseMode.MARKDOWN_V2)
         return YEAR
-    await update.message.reply_text("📆 ممتاز! الآن أرسل *شهر ميلادك* (رقم من 1 إلى 12):", parse_mode=ParseMode.MARKDOWN_V2)
+    next_m = intelligent_markdown_v2_escape("📆 ممتاز! الآن أرسل شهر ميلادك (رقم من 1 إلى 12):")
+    await update.message.reply_text(next_m, parse_mode=ParseMode.MARKDOWN_V2)
     return MONTH
 
 async def p_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -736,9 +749,11 @@ async def p_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 12): raise ValueError()
         context.user_data['month'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ شهر غير صالح. يرجى إدخال رقم شهر حقيقي بين 1 و 12:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_m = intelligent_markdown_v2_escape("⚠️ شهر غير صالح. يرجى إدخال رقم شهر حقيقي بين 1 و 12:")
+        await update.message.reply_text(err_m, parse_mode=ParseMode.MARKDOWN_V2)
         return MONTH
-    await update.message.reply_text("🗓 رائع! أرسل الآن *يوم ميلادك* برقم من (1 إلى 31):", parse_mode=ParseMode.MARKDOWN_V2)
+    next_d = intelligent_markdown_v2_escape("🗓 رائع! أرسل الآن يوم ميلادك برقم من (1 إلى 31):")
+    await update.message.reply_text(next_d, parse_mode=ParseMode.MARKDOWN_V2)
     return DAY
 
 async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -747,21 +762,25 @@ async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (1 <= val <= 31): raise ValueError()
         context.user_data['day'] = val
     except ValueError:
-        await update.message.reply_text("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم بشكل صحيح:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_d = intelligent_markdown_v2_escape("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم بشكل صحيح:")
+        await update.message.reply_text(err_d, parse_mode=ParseMode.MARKDOWN_V2)
         return DAY
     keyboard = [[InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="knows_true")], [InlineKeyboardButton("❌ لا، غير معروف", callback_data="knows_false")]]
-    await update.message.reply_text("🕒 هل تعرف *وقت ولادتك الدقيق*؟", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+    ask_t = intelligent_markdown_v2_escape("🕒 هل تعرف وقت ولادتك الدقيق؟")
+    await update.message.reply_text(ask_t, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
     return KNOWS_TIME
 
 async def p_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     if query.data == "knows_true":
-        await query.edit_message_text("🕓 أرسل وقت الولادة بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `18:45`:", parse_mode=ParseMode.MARKDOWN_V2)
+        ask_t = intelligent_markdown_v2_escape("🕓 أرسل وقت الولادة بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `18:45`:")
+        await query.edit_message_text(ask_t, parse_mode=ParseMode.MARKDOWN_V2)
         return TIME
     else:
         context.user_data['hour'], context.user_data['minute'] = 12, 0
-        await query.edit_message_text("📍 أرسل *اسم مدينة ميلادك* باللغة العربية أو الإنجليزية:", parse_mode=ParseMode.MARKDOWN_V2)
+        ask_loc = intelligent_markdown_v2_escape("📍 أرسل اسم مدينة ميلادك باللغة العربية أو الإنجليزية:")
+        await query.edit_message_text(ask_loc, parse_mode=ParseMode.MARKDOWN_V2)
         return LOCATION
 
 async def p_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -771,9 +790,11 @@ async def p_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not (0 <= hour <= 23 and 0 <= minute <= 59): raise ValueError()
         context.user_data['hour'], context.user_data['minute'] = hour, minute
     except ValueError:
-        await update.message.reply_text("⚠️ تنسيق أو وقت خاطئ، يرجى إرساله مثل `14:30`:", parse_mode=ParseMode.MARKDOWN_V2)
+        err_t = intelligent_markdown_v2_escape("⚠️ تنسيق أو وقت خاطئ، يرجى إرساله مثل `14:30`:")
+        await update.message.reply_text(err_t, parse_mode=ParseMode.MARKDOWN_V2)
         return TIME
-    await update.message.reply_text("📍 أرسل *اسم مدينة ميلادك* باللغة العربية أو الإنجليزية:", parse_mode=ParseMode.MARKDOWN_V2)
+    ask_loc = intelligent_markdown_v2_escape("📍 أرسل اسم مدينة ميلادك باللغة العربية أو الإنجليزية:")
+    await update.message.reply_text(ask_loc, parse_mode=ParseMode.MARKDOWN_V2)
     return LOCATION
 
 async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -799,7 +820,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data == "main_home":
         await query.answer()
         context.user_data.clear()
-        await query.edit_message_text("🔮 *مرحباً بك في البوت الشامل المحدث* 🔮\n\nالرجاء اختيار القسم من الأزرار أدناه:", reply_markup=get_start_keyboard(), parse_mode=ParseMode.MARKDOWN_V2)
+        home_msg = intelligent_markdown_v2_escape("🔮 مرحباً بك في البوت الشامل المحدث 🔮\n\nالرجاء اختيار القسم من الأزرار أدناه:")
+        await query.edit_message_text(home_msg, reply_markup=get_start_keyboard(), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     elif data == "reset_my_birthdata":
@@ -807,7 +829,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await async_db.delete_user_profile(user_id)
         invalidate_user_old_cache(user_id, "natal")
         context.user_data.clear()
-        await query.edit_message_text("🗑 تم مسح بيانات ميلادك السابقة بنجاح من قاعدة البيانات.\nيرجى إعادة إرسال /start لتسجيل بياناتك الحية من جديد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]]), parse_mode=ParseMode.MARKDOWN_V2)
+        reset_msg = intelligent_markdown_v2_escape("🗑 تم مسح بيانات ميلادك السابقة بنجاح من قاعدة البيانات.\nيرجى إعادة إرسال /start لتسجيل بياناتك الحية من جديد.")
+        await query.edit_message_text(reset_msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="main_home")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     elif data in ["go_khira", "khira_back"]:
@@ -839,7 +862,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     saved_profile = await async_db.get_user_profile(user_id)
     if not saved_profile:
-        await query.message.reply_text("❌ لم يتم العثور على بيانات، اضغط على /start لبدء الحساب مجدداً.", parse_mode=ParseMode.MARKDOWN_V2)
+        err_find = intelligent_markdown_v2_escape("❌ لم يتم العثور على بيانات، اضغط على /start لبدء الحساب مجدداً.")
+        await query.message.reply_text(err_find, parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     chart_data = await get_or_compute_user_chart(user_id, saved_profile, engine)
@@ -906,7 +930,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 img_bytes_data = await draw_chart_safe(drawer, adapted_chart, user_id)
                 
                 if not img_bytes_data:
-                    await query.message.reply_text("⚠️ المحرك لم يقم بتوليد مخرجات رسومية صالحة حالياً.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                    err_draw = intelligent_markdown_v2_escape("⚠️ المحرك لم يقم بتوليد مخرجات رسومية صالحة حالياً.")
+                    await query.message.reply_text(err_draw, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
                     return
 
                 img_buffer = io.BytesIO(img_bytes_data)
@@ -914,12 +939,14 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await telegram_app.bot.send_photo(chat_id=user_id, photo=img_buffer, caption="🪐 *عجلة خريطتك الفلكية الاحترافية كاملة الدلالات (Natal Wheel)*", reply_markup=astrology_back_markup)
             except Exception as draw_err:
                 logger.error(f"Error drawing chart for user={draw_err}")
-                await query.message.reply_text("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض.", reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                err_draw_fail = intelligent_markdown_v2_escape("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض.")
+                await query.message.reply_text(err_draw_fail, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as exc:
         logger.error(f"Error handling menu click for user={user_id}: {exc}")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("🚫 تم إلغاء العملية الحالية بنجاح. ارسل /start للبدء مجدداً.", parse_mode=ParseMode.MARKDOWN_V2)
+    cancel_msg = intelligent_markdown_v2_escape("🚫 تم إلغاء العملية الحالية بنجاح. ارسل /start للبدء مجدداً.")
+    await update.message.reply_text(cancel_msg, parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
 # =====================================================================
