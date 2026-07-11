@@ -4,9 +4,9 @@ import io
 import json
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -29,6 +29,8 @@ from chart import CoreAstrologyEngine
 from scoring import RulesEngine
 from interpreter import AstrologicalInterpreter
 from drawer import AstrologyChartDrawer
+# استيراد المحرك الاحترافي الجديد للاختيارات الفلكية
+from electional_engine import ElectionalAstrologyEngine
 
 # 1. إعداد السجلات (Logging)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -37,16 +39,18 @@ logger = logging.getLogger(__name__)
 # 2. تعريف مراحل المحادثة (Conversation States)
 YEAR, MONTH, DAY, KNOWS_TIME, TIME, LOCATION = range(6)
 P2_YEAR, P2_MONTH, P2_DAY, P2_KNOWS_TIME, P2_TIME, P2_LOCATION = range(6, 12)
+ELECTIONAL_QUERY = 12  # المرحلة الجديدة الخاصة بمدخلات الاختيارات الفلكية
 
-# 3. تهيئة المحركات الفلكية الأساسية
+# 3. تهيئة المحركات الفلكية الأساسية والجديدة
 engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
+electional_engine = ElectionalAstrologyEngine(astrology_engine=engine)
 
-# جلب التوكن بشكل صارم ومباشر من متغيرات البيئة دون قيم احتياطية قديمة
+# جلب التوكن بشكل صارم ومباشر من متغيرات البيئة
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    raise ValueError("❌ خطأ حرج: لم يتم العثور على متغير البيئة 'TELEGRAM_BOT_TOKEN'! يرجى إضافته في إعدادات المنصة.")
+    raise ValueError("❌ خطأ حرج: لم يتم العثور على متغير البيئة 'TELEGRAM_BOT_TOKEN'!")
 
 WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
 
@@ -54,7 +58,7 @@ telegram_app = Application.builder().token(TOKEN).build()
 
 
 # =====================================================================
-# محرك حفظ واستدعاء بيانات ملفات المستخدمين (PostgreSQL)
+# محرك حفظ واستدعاء بيانات ملفات المستخدمين (PostgreSQL) - مع تحسين الأداء
 # =====================================================================
 class UsersDatabaseEngine:
     def __init__(self):
@@ -67,72 +71,56 @@ class UsersDatabaseEngine:
         return psycopg2.connect(self.db_url)
 
     def _init_db(self):
-        conn = None
         try:
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS user_profiles (
-                        user_id BIGINT PRIMARY KEY,
-                        profile_data TEXT NOT NULL
-                    );
-                """)
-                conn.commit()
-                logger.info("✅ PostgreSQL database tables initialized successfully.")
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS user_profiles (
+                            user_id BIGINT PRIMARY KEY,
+                            profile_data TEXT NOT NULL
+                        );
+                    """)
+                    conn.commit()
+            logger.info("✅ PostgreSQL database tables initialized successfully.")
         except Exception as e:
             logger.error(f"Error initializing PostgreSQL Database: {e}")
-        finally:
-            if conn:
-                conn.close()
 
     def get_user_profile(self, user_id: int) -> Dict[str, Any]:
-        conn = None
         try:
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT profile_data FROM user_profiles WHERE user_id = %s;", (user_id,))
-                row = cursor.fetchone()
-                if row:
-                    return json.loads(row[0])
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT profile_data FROM user_profiles WHERE user_id = %s;", (user_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return json.loads(row[0])
             return {}
         except Exception as e:
             logger.error(f"Error loading user profile from DB: {e}")
             return {}
-        finally:
-            if conn:
-                conn.close()
 
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]):
-        conn = None
         try:
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                json_data = json.dumps(profile_data, ensure_ascii=False)
-                cursor.execute("""
-                    INSERT INTO user_profiles (user_id, profile_data) 
-                    VALUES (%s, %s)
-                    ON CONFLICT (user_id) 
-                    DO UPDATE SET profile_data = EXCLUDED.profile_data;
-                """, (user_id, json_data))
-                conn.commit()
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    json_data = json.dumps(profile_data, ensure_ascii=False)
+                    cursor.execute("""
+                        INSERT INTO user_profiles (user_id, profile_data) 
+                        VALUES (%s, %s)
+                        ON CONFLICT (user_id) 
+                        DO UPDATE SET profile_data = EXCLUDED.profile_data;
+                    """, (user_id, json_data))
+                    conn.commit()
         except Exception as e:
             logger.error(f"Error saving user profile to DB: {e}")
-        finally:
-            if conn:
-                conn.close()
 
     def delete_user_profile(self, user_id: int):
-        conn = None
         try:
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM user_profiles WHERE user_id = %s;", (user_id,))
-                conn.commit()
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM user_profiles WHERE user_id = %s;", (user_id,))
+                    conn.commit()
         except Exception as e:
             logger.error(f"Error deleting user profile from DB: {e}")
-        finally:
-            if conn:
-                conn.close()
 
 users_db = UsersDatabaseEngine()
 
@@ -228,10 +216,8 @@ class SynastryEngine:
 class TransitEngine:
     @staticmethod
     def generate_daily_forecast(natal_chart: Any) -> str:
-        """يقوم بمقارنة الكواكب الحالية في السماء بلحظة ميلاد المستخدم لإنشاء توقعات حية"""
         now = datetime.utcnow()
         sun_sign = getattr(natal_chart.planets.get('Sun'), 'sign', 'Aries').lower()
-        moon_sign = getattr(natal_chart.planets.get('Moon'), 'sign', 'Taurus').lower()
         
         transit_moon_phases = ["برج الحمل الناري", "برج الثور الترابي", "برج الجوزاء الهوائي", "برج السرطان المائي", "برج الأسد الناري", "برج العذراء الترابي"]
         current_phase = transit_moon_phases[now.day % len(transit_moon_phases)]
@@ -306,6 +292,7 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         keyboard = [
             [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
             [InlineKeyboardButton("📅 التوقعات الحية اليومية (Transits)", callback_data="menu_daily_forecast")],
+            [InlineKeyboardButton("⏱ تحديد اليوم والساعة الأنسب لقراراتك (New)", callback_data="start_electional_flow")],
             [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
             [InlineKeyboardButton("💞 قياس التوافق مع شريك (Synastry)", callback_data="start_synastry_flow")],
             [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
@@ -342,7 +329,7 @@ async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAUL
 
 async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['p2_year'] = int(update.message.text.strip())
-    await update.message.reply_text("📆 ممتاز! الآن أرسل **شهر ميلاد الطرف الثاني** (من 1 إلى 12):")
+    await update.message.reply_text("📆 ممتاز! الآن أرسل **شهر ميلادر الطرف الثاني** (من 1 إلى 12):")
     return P2_MONTH
 
 async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -422,6 +409,45 @@ async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         f"✨ *الخريطة المقارنة تعطي مؤشرات التناغم الطبيعي، وتظل الإرادة وحسن التعامل أساس استمرار الروابط الحقيقية.*"
     )
 
+    back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
+    await update.message.reply_text(report_text, reply_markup=back_markup, parse_mode="Markdown")
+    return ConversationHandler.END
+
+
+# =====================================================================
+# مسار فحص وبدء الاختيارات الفلكية الحقيقية (Electional Workflow)
+# =====================================================================
+async def electional_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+
+    saved_profile = users_db.get_user_profile(user_id)
+    if not saved_profile:
+        await query.edit_message_text("⚠️ يجب أن تقوم بحساب خريطتك الفردية الشخصية أولاً قبل استخدام محرك الاختيارات الذكي.")
+        return ConversationHandler.END
+
+    await query.edit_message_text(
+        "🔮 **محرك الاختيارات الفلكية وجدولة القرارات (Electional Engine)** 🔮\n\n"
+        "اكتب الآن بأسلوبك ونصك الحر القرار أو الخطوة التي تنوي الإقدام عليها، مثال:\n"
+        " 📝 *'أريد فتح متجر إلكتروني لبيع الملابس'* \n"
+        " 📝 *'هل الوقت مناسب لتوقيع عقد العمل غداً؟'*\n\n"
+        "سيقوم المعالج الذكي بتصنيف نيتك، وحساب حركة الكواكب الفلكية الحية جغرافياً ليعطيك تقرير الأيام والساعات الذهبية بدقة."
+    )
+    return ELECTIONAL_QUERY
+
+async def handle_electional_query_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_text = update.message.text.strip()
+    user_id = update.message.from_user.id
+    
+    saved_profile = users_db.get_user_profile(user_id)
+    # استخدام إحداثيات المستخدم الحقيقية المسجلة لضمان حساب الساعات الكوكبية جغرافياً بدقة لموقعه
+    lat = saved_profile.get("lat", 33.3152) 
+    lon = saved_profile.get("lon", 44.3661)
+    
+    # معالجة وحساب التقرير النهائي الشامل 10/10
+    report_text, _ = electional_engine.generate_detailed_report(user_text, lat, lon)
+    
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
     await update.message.reply_text(report_text, reply_markup=back_markup, parse_mode="Markdown")
     return ConversationHandler.END
@@ -636,6 +662,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     astrology_back_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
         [InlineKeyboardButton("📅 التوقعات الحية اليومية (Transits)", callback_data="menu_daily_forecast")],
+        [InlineKeyboardButton("⏱ تحديد اليوم والساعة الأنسب لقراراتك (New)", callback_data="start_electional_flow")],
         [InlineKeyboardButton("🖼 توليد الخريطة الفلكية (صورة)", callback_data="menu_generate_image")],
         [InlineKeyboardButton("💞 قياس التوافق مع شريك (Synastry)", callback_data="start_synastry_flow")],
         [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
@@ -706,12 +733,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # =====================================================================
-# تسجيل الـ Handlers للـ Conversation المزدوج (فردي + توافق)
+# تسجيل الـ Handlers للـ Conversation المزدوج (فردي + توافق + اختيارات)
 # =====================================================================
 conv_handler = ConversationHandler(
     entry_points=[
         CallbackQueryHandler(astrology_trigger_workflow, pattern="^go_astrology$"),
-        CallbackQueryHandler(synastry_trigger_workflow, pattern="^start_synastry_flow$")
+        CallbackQueryHandler(synastry_trigger_workflow, pattern="^start_synastry_flow$"),
+        CallbackQueryHandler(electional_trigger_workflow, pattern="^start_electional_flow$") # نقطة الدخول للمحرك الجديد
     ],
     states={
         YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_year)],
@@ -727,6 +755,8 @@ conv_handler = ConversationHandler(
         P2_KNOWS_TIME: [CallbackQueryHandler(p2_knows_time)],
         P2_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_time)],
         P2_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_location)],
+        
+        ELECTIONAL_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_electional_query_analysis)] # مرحلة استلام وتحليل النص
     },
     fallbacks=[CommandHandler('cancel', cancel)],
     per_message=False
@@ -734,4 +764,5 @@ conv_handler = ConversationHandler(
 
 telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
-telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology|start_synastry_flow)$).*"))
+# تعديل الـ Regex لتفادي حظر أزرار الاختيارات والتوافق الصادرة حديثاً
+telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology|start_synastry_flow|start_electional_flow)$).*"))
