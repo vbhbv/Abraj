@@ -7,11 +7,23 @@ logger = logging.getLogger(__name__)
 class ElectionalAstrologyEngine:
     def __init__(self, astrology_engine: Any):
         """
-        تهيئة محرك الاختيارات الفلكية الحقيقي القائم على الحسابات الفلكية الحية.
+        تهيئة المحرك الفلكي الاختياري الاحترافي.
+        يعتمد على محرك حسابات فلكية حي وجغرافي.
         """
         self.engine = astrology_engine
         
-        # القواعد الحاكمة للتنجيم الاختياري الحقيقي
+        # جدول الكرامات الفلكية الأساسية (Domicile, Exaltation, Detriment, Fall)
+        self.dignities = {
+            "Sun": {"domicile": ["Leo"], "exaltation": "Aries", "detriment": ["Aquarius"], "fall": "Libra"},
+            "Moon": {"domicile": ["Cancer"], "exaltation": "Taurus", "detriment": ["Capricorn"], "fall": "Scorpio"},
+            "Mercury": {"domicile": ["Gemini", "Virgo"], "exaltation": "Virgo", "detriment": ["Sagittarius", "Pisces"], "fall": "Pisces"},
+            "Venus": {"domicile": ["Taurus", "Libra"], "exaltation": "Pisces", "detriment": ["Scorpio", "Aries"], "fall": "Virgo"},
+            "Mars": {"domicile": ["Aries", "Scorpio"], "exaltation": "Capricorn", "detriment": ["Libra", "Taurus"], "fall": "Cancer"},
+            "Jupiter": {"domicile": ["Sagittarius", "Pisces"], "exaltation": "Cancer", "detriment": ["Gemini", "Virgo"], "fall": "Capricorn"},
+            "Saturn": {"domicile": ["Capricorn", "Aquarius"], "exaltation": "Libra", "detriment": ["Cancer", "Leo"], "fall": "Aries"}
+        }
+
+        # قواعد الاختيارات التقليدية الصارمة لكل نية
         self.decision_rules = {
             "financial": {
                 "name": "الجانب المالي، الاستثماري والتجاري",
@@ -19,7 +31,8 @@ class ElectionalAstrologyEngine:
                 "preferred_houses": [2, 8, 10, 11],
                 "moon_signs": ["Taurus", "Virgo", "Capricorn", "Cancer"],
                 "allow_waning": False,
-                "description": "تأسيس الشركات، الاستثمار، توقيع العقود التجارية، وشراء النطاقات الرقمية."
+                "critical_planets": ["Mercury", "Jupiter"],
+                "description": "تأسيس الشركات، الاستثمار، توقيع العقود، وشراء النطاقات الرقمية."
             },
             "emotional": {
                 "name": "الجانب العاطفي، العلاقات والزواج",
@@ -27,15 +40,17 @@ class ElectionalAstrologyEngine:
                 "preferred_houses": [5, 7, 11],
                 "moon_signs": ["Taurus", "Cancer", "Libra", "Pisces"],
                 "allow_waning": False,
-                "description": "عقد القران، الخطوبة، المصالحات، وتعميق الروابط الدبلوماسية والاجتماعية."
+                "critical_planets": ["Venus", "Moon"],
+                "description": "عقد القران، الخطوبة، المصالحات، وتعميق الروابط الاجتماعية والدبلوماسية."
             },
             "confrontation": {
                 "name": "المواجهات، القضايا والإنهاء والتخلص",
                 "ruling_planets": ["Mars", "Saturn"],
                 "preferred_houses": [6, 8, 12],
                 "moon_signs": ["Aries", "Scorpio", "Capricorn"],
-                "allow_waning": True,  # التناقص مطلوب للتخلص من القضايا والخصوم والأورام
-                "description": "رفع القضايا القانونية، بتر العلاقات السامة، وتوقيت العمليات الجراحية والاستئصال."
+                "allow_waning": True, # التناقص مطلوب هندسياً للهدم والإضعاف
+                "critical_planets": ["Mars"],
+                "description": "رفع القضايا، بتر العلاقات السامة، وتوقيت العمليات الجراحية والاستئصال."
             },
             "intellectual": {
                 "name": "الدراسة، التفكير، التأليف والنشر الفلسفي",
@@ -43,25 +58,27 @@ class ElectionalAstrologyEngine:
                 "preferred_houses": [3, 9],
                 "moon_signs": ["Gemini", "Libra", "Aquarius", "Virgo"],
                 "allow_waning": False,
-                "description": "البدء بالدراسات العليا، تأليف الكتب والبحوث، وإطلاق المنصات الفكرية والأرشيفية."
+                "critical_planets": ["Mercury"],
+                "description": "البدء بالدراسات، تأليف الكتب والبحوث، وإطلاق المنصات الفكرية والأرشيفية."
             },
             "general": {
-                "name": "الأمور العامة والخطوات اليومية اعتيادية",
+                "name": "الأمور العامة والخطوات اليومية الاعتيادية",
                 "ruling_planets": ["Sun", "Jupiter"],
                 "preferred_houses": [1, 5, 9],
                 "moon_signs": ["Aries", "Leo", "Sagittarius", "Taurus", "Gemini", "Cancer", "Libra", "Aquarius", "Pisces"],
                 "allow_waning": False,
+                "critical_planets": ["Sun"],
                 "description": "الخطوات اليومية العادية التي تتطلب بركة ودعم فلكي عام."
             }
         }
 
     def classify_user_intent_ai(self, user_text: str) -> str:
         """
-        مُصنف دلالي مستند إلى الكلمات المفتاحية والسياق الفكري لتحليل نية السائل.
+        محاكاة تصنيف دلالي مرن (يمكن استبداله لاحقاً بـ Embedding Distance أو LLM).
         """
         text = user_text.lower().strip()
         keywords = {
-            "financial": ["متجر", "محل", "شراء", "بيع", "نطاق", "دومين", "فلوس", "مال", "تجارة", "مشروع", "استثمار", "عقد", "شركة"],
+            "financial": ["متجر", "محل", "شراء", "بيع", "نطاق", "دومين", "فلوس", "مال", "تجارة", "مشروع", "استثمار", "عقد", "شركة", "نشاط"],
             "emotional": ["زواج", "خطوبة", "حب", "حبيب", "شريك", "عاطفة", "ارتباط", "عقد قران", "صلح", "صديق"],
             "confrontation": ["محكمة", "قضية", "محامي", "خلاف", "انفصال", "طلاق", "قطع", "مواجهة", "جراحة", "عملية"],
             "intellectual": ["كتاب", "تأليف", "نشر", "بحث", "دراسة", "جامعة", "امتحان", "فلسفة", "مقال", "علم", "أرشيف"]
@@ -71,74 +88,136 @@ class ElectionalAstrologyEngine:
                 return intent
         return "general"
 
+    def calculate_essential_dignity(self, planet: str, sign: str) -> int:
+        """
+        حساب قوة الكوكب التقليدية (Essential Dignity) بالنقاط.
+        """
+        if planet not in self.dignities:
+            return 0
+        rules = self.dignities[planet]
+        if sign in rules["domicile"]:
+            return 20  # في بيته وموطنه الأصلي (قوة عظمى)
+        if sign == rules["exaltation"]:
+            return 15  # في شرفه (عزيز ومكرم)
+        if sign in rules["detriment"]:
+            return -15 # في وباله (ضعيف ومشتت)
+        if sign == rules["fall"]:
+            return -20 # في هبوطه (منحوس ومعطل)
+        return 0
+
     def evaluate_astrological_fitness(self, chart: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[float, List[str]]:
         """
-        قلب التنجيم الفعلي: تقييم حي للخريطة العابرة بناءً على حسابات الاتصالات،
-        مواقع الكواكب في البيوت، وحالة القمر الفلكية الحقيقية (خلو المسار والبرج).
+        تطبيق تنجيمي صارم يتضمن: التراجعات، الاحتراق، الكرامات، درجات القمر الحرجة والاتصالات.
         """
-        score = 50.0  # نقطة البداية المحايدة
+        score = 60.0  
         reasons = []
 
         planets = chart.get("planets", {})
         aspects = chart.get("aspects", [])
-        
-        # 1. فحص القمر (أهم جرم في الاختيارات الفلكية)
+        sun_long = planets.get("Sun", {}).get("longitude", 0.0)
+
+        # 1. فحص الكواكب الحاكمة والحرجة (التراجع والاحتراق والكرامة)
+        for p_name in rules["critical_planets"]:
+            p_data = planets.get(p_name, {})
+            if not p_data:
+                continue
+            
+            # أ) التحقق من التراجع (Retrograde)
+            if p_data.get("retrograde", False):
+                score -= 25
+                reasons.append(f"⚠️ كوكب {p_name} الحاكم للعمل متراجع حالياً، مما يسبب تأخيراً وعراقيل حادة.")
+
+            # ب) التحقق من الاحتراق (Combustion)
+            p_long = p_data.get("longitude", 0.0)
+            if p_name != "Sun" and abs(p_long - sun_long) < 8.5:
+                score -= 20
+                reasons.append(f"🔥 كوكب {p_name} محترق تماماً بسبب قربه الشديد من الشمس (تحت الشعاع).")
+
+            # ج) التحقق من الكرامة الأساسية (Essential Dignity)
+            dignity_score = self.calculate_essential_dignity(p_name, p_data.get("sign", ""))
+            score += dignity_score
+            if dignity_score > 0:
+                reasons.append(f"✨ كوكب {p_name} في موقع قوة كوكبية ممتاز (بيته أو شرفه).")
+            elif dignity_score < 0:
+                reasons.append(f"📉 كوكب {p_name} في موقع ضعف كوكبي تقليدي (وباله أو هبوطه).")
+
+        # 2. فحص القمر الحقيقي بدقة (Moon Analysis)
         moon_data = planets.get("Moon", {})
-        moon_sign = moon_data.get("sign")
-        moon_is_waning = moon_data.get("is_waning", False) # هل القمر يتناقص (من البدر للمحاق)؟
+        if moon_data:
+            moon_sign = moon_data.get("sign", "")
+            moon_deg = moon_data.get("degree", 0.0)
+            moon_is_waning = moon_data.get("is_waning", False)
 
-        # مطابقة برج القمر مع طبيعة الحدث
-        if moon_sign in rules["moon_signs"]:
-            score += 15
-            reasons.append(f"🌙 القمر في برج صديق وملائم للعمل ({moon_sign}).")
-        else:
-            score -= 10
+            # أ) برج القمر ومرحلته
+            if moon_sign in rules["moon_signs"]:
+                score += 10
+            if moon_is_waning and not rules["allow_waning"]:
+                score -= 15
+                reasons.append("🌙 نور القمر في حالة تناقص، وهو غير نافع لمشاريع النمو والتأسيس المالي والعاطفي.")
 
-        # مطابقة زيادة ونقصان طاقة نور القمر مع النية
-        if moon_is_waning and not rules["allow_waning"]:
-            score -= 15
-            reasons.append("⚠️ القمر في طور التناقص (الهدم/الإنهاء)، غير مثالي لمشاريع الزيادة والنمو.")
-        elif not moon_is_waning and not rules["allow_waning"]:
-            score += 10
-            reasons.append("📈 القمر في طور التزايد (النور ينمو)، ممتاز للتأسيس والوفرة المادية والمعنوية.")
+            # ب) خلو مسار القمر (Void of Course)
+            if moon_data.get("is_void_of_course", False):
+                score -= 30
+                reasons.append("🚨 القمر خالي المسار (Void of Course)! تجنب البدء بأي مشروع الآن.")
 
-        # فحص خلو مسار القمر الفلكي الحقيقي (Void of Course)
-        # إذا كان القمر لا يصنع أي اتصالات رئيسية مقبلة قبل خروجه من البرج
-        is_voc = moon_data.get("is_void_of_course", False)
-        if is_voc:
-            score -= 25
-            reasons.append("🚨 تحذير تنجيمي: القمر خالي المسار! الأعمال التي تبدأ الآن لن تثمر أو ستتعطل تماماً.")
+            # ج) درجات القمر الحرجة (Anaretic Degree) أو الطريق المحترقة
+            if moon_deg >= 29.0:
+                score -= 20
+                reasons.append("⚠️ القمر في الدرجة الأخيرة الحرجـة (29°) من البرج، طاقة متقلبة وغير مستقرة.")
 
-        # 2. فحص الاتصالات الحية (Aspects) للكواكب الحاكمة للحدث
+        # 3. فحص الاتصالات الحية (Aspects)
         rulers = rules["ruling_planets"]
         for aspect in aspects:
             p1 = aspect.get("planet1")
             p2 = aspect.get("planet2")
-            aspect_type = aspect.get("type") # 'trine', 'sextile', 'square', 'opposition', 'conjunction'
+            a_type = aspect.get("type")
             
-            # اتصالات سعيدة وميسرة مع الكواكب الحاكمة للنية
             if p1 in rulers or p2 in rulers:
-                if aspect_type in ["trine", "sextile"]:
-                    score += 12
-                    reasons.append(f"✨ اتصال تثليث/تسديس سعيد وميسر بين {p1} و {p2} يدعم خطوتك.")
-                elif aspect_type in ["square", "opposition"]:
+                if a_type in ["trine", "sextile"]:
+                    score += 10
+                elif a_type in ["square", "opposition"]:
                     score -= 15
-                    reasons.append(f"⚡ اتصال تربيع/مقابلة نحس ومشدود بين {p1} و {p2} يشير إلى عراقيل حادة.")
-                    
-        # 3. فحص بيوت الكواكب السعيدة (تحديداً المشتري والزهرة)
-        jupiter_house = planets.get("Jupiter", {}).get("house", 1)
-        if jupiter_house in rules["preferred_houses"]:
-            score += 8
-            reasons.append(f"🪐 كوكب المشتري (السعد الأكبر) يحل في بيت قوي وداعم للخطوة (البيت {jupiter_house}).")
+                    reasons.append(f"⚡ اتصال تربيع أو مقابلة نحس بين {p1} و {p2} يهدد نجاح المسعى.")
 
-        # ضبط الحدود الرياضية للمؤشر
+        # 4. الحماية من فترات الكسوف والخسوف (Eclipses)
+        if chart.get("is_eclipse_period", False):
+            score -= 40
+            reasons.append("🌑 النوافذ الفلكية تقع ضمن عاصفة الكسوف/الخسوف، الطاقة الكونية ملوثة بالكامل.")
+
         final_score = max(5.0, min(score, 100.0))
         return final_score, reasons
 
+    def calculate_best_planetary_hour(self, target_date: datetime, ruling_planets: List[str]) -> str:
+        """
+        حساب الساعات الكوكبية التقليدية الحية ليوم محدد واختيار الساعة التابعة لكوكب السعد الحاكم للنية.
+        """
+        # في بيئة الإنتاج يتم جلب أوقات شروق وغروب الشمس الفعلية جغرافياً عبر المحرك
+        # هنا نعتمد حساباً تقليدياً معيارياً افتراضياً يبدأ من الساعة 06:00 صباحاً كنموذج
+        sunrise = target_date.replace(hour=6, minute=0, second=0)
+        
+        # ترتيب الساعات الكوكبية التقليدي (ترتيب الكلدانيين): زحل، المشتري، المريخ، الشمس، الزهرة، عطارد، القمر
+        chaldean_order = ["Saturn", "Jupiter", "Mars", "Sun", "Venus", "Mercury", "Moon"]
+        
+        # تحديد كوكب اليوم (مثال: السبت لزحل، الأحد للشمس... إلخ)
+        day_of_week = target_date.weekday() # 0 = Monday, 6 = Sunday
+        weekday_to_planet = {5: "Saturn", 6: "Sun", 0: "Moon", 1: "Mars", 2: "Mercury", 3: "Jupiter", 4: "Venus"}
+        start_planet = weekday_to_planet.get(day_of_week, "Sun")
+        
+        start_index = chaldean_order.index(start_planet)
+        
+        # البحث عن أول ساعة كوكبية تنتمي للكواكب الحاكمة الحليفة للقرار
+        for hour_idx in range(12): # الساعات النهارية الـ 12
+            current_planet = chaldean_order[(start_index + hour_idx) % 7]
+            if current_planet in ruling_planets:
+                hour_start = sunrise + timedelta(hours=hour_idx)
+                hour_end = hour_start + timedelta(hours=1)
+                return f"⏳ ساعة {current_planet} السعيدة (من {hour_start.strftime('%H:%M')} إلى {hour_end.strftime('%H:%M')})"
+                
+        return "⏳ الساعة الأولى بعد الشروق مباشرة (ساعة الكوكب الحاكم لليوم)"
+
     def generate_detailed_report(self, user_text: str, lat: float, lon: float) -> Tuple[str, str]:
         """
-        الذكاء الاختياري الفعلي: فحص نافذة من 30 يوماً مقبلة، واستخراج أفضل أيام
-        فلكية مدعومة هندسياً واتصالياً، وتوليد تقرير تنجيمي يليق بعقل باحث.
+        المسح التنجيمي الذكي والشامل لفترة 30 يوماً مقبلة وإظهار أدق التفاصيل المعرفية.
         """
         decision_key = self.classify_user_intent_ai(user_text)
         rules = self.decision_rules.get(decision_key, self.decision_rules["general"])
@@ -146,65 +225,54 @@ class ElectionalAstrologyEngine:
         start_date = datetime.utcnow()
         all_days_evaluated = []
 
-        # مسح شامل لـ 30 يوماً قادمة بدلاً من 5 أيام عشوائية متكررة
         for day_offset in range(30):
             current_check = start_date + timedelta(days=day_offset)
             try:
-                # استدعاء المحرك الحسابي الحقيقي لحساب مواقع الكواكب والزوايا في موقع المستخدم
+                # محاكاة استدعاء خريطة السماء العابرة (Transit Chart) جغرافياً وحياً
                 chart = self.engine.compute_natal_chart(current_check, lat, lon)
                 score, reasons = self.evaluate_astrological_fitness(chart, rules)
                 all_days_evaluated.append({
                     "date": current_check,
                     "score": score,
-                    "reasons": reasons,
-                    "chart": chart
+                    "reasons": reasons
                 })
             except Exception as e:
-                logger.error(f"Error computing raw chart on day {day_offset}: {e}")
+                logger.error(f"Error evaluating day {day_offset}: {e}")
                 continue
 
-        # فرز الأيام حسب الأعلى جودة وتوفيقاً فلكياً هندسياً
         all_days_evaluated.sort(key=lambda x: x["score"], reverse=True)
         
         if not all_days_evaluated:
-            return "❌ عذراً، تعذر الاتصال بمحرك الحسابات الفلكية لتوليد التقرير حالياً.", "general"
+            return "❌ عذراً، هناك خلل في معالجة خريطة السماء اللحظية (Transit).", "general"
 
         best_option = all_days_evaluated[0]
-        second_best = all_days_evaluated[1] if len(all_days_evaluated) > 1 else None
         worst_option = all_days_evaluated[-1]
 
-        # صياغة أسباب القبول الفلكي الفعلي
-        reasons_bulleted = "\n".join(best_option["reasons"][:4]) if best_option["reasons"] else "• طاقات الكواكب والبيوت متزنة ومحايدة تماماً."
+        # حساب الساعة الفلكية الذهبية الحية لليوم المختار
+        best_hour_text = self.calculate_best_planetary_hour(best_option["date"], rules["ruling_planets"])
 
-        # صياغة التقرير المعرفي الرصين للسائل
+        reasons_bulleted = "\n".join([f"• {r}" for r in best_option["reasons"][:4]]) if best_option["reasons"] else "• اتصالات الكواكب والكرامات الأساسية في حالة اتزان مستقر مائل للسعود."
+
         report_text = (
-            f"🪐 **مَحرك الاختيارات الفلكية الهندسي والتحليل الدلالي** 🪐\n"
+            f"🪐 **مَحرك الاختيارات التنجيمية المتقدم والتحليل الهندسي للسماء** 🪐\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🎯 **تحليل النية والقصد:**\n"
-            f"← التصنيف الفلكي: ` {rules['name']} `\n"
-            f"← نطاق التأثير المحلل: *{rules['description']}*\n\n"
+            f"🎯 **تحليل النية والقصد الفكري:**\n"
+            f"← النطاق الحاكم: ` {rules['name']} `\n"
+            f"← التوصية الأساسية: *{rules['description']}*\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌟 **أفضل توقيت تنجيمي حقيقي للإقدام وتوقيع البدء (خلال 30 يوماً):**\n"
+            f"🌟 **أفضل تاريخ فلكي للإقدام (خلال مسح 30 يوماً حياً):**\n"
             f"📅 **التاريخ المقترح:** {best_option['date'].strftime('%Y-%m-%d')} (توقيت غرينتش)\n"
-            f"📊 **معدل التيسير الهندسي:** ` {best_option['score']:.1f}% `\n\n"
-            f"🔭 **المسوغات والشهادات الفلكية الحية لهذا اليوم:**\n"
+            f"📊 **معدل التيسير والنجاح الهندسي:** ` {best_option['score']:.1f}% `\n\n"
+            f"🔭 **المسوغات والشهادات الفلكية التقليدية العميقة:**\n"
             f"{reasons_bulleted}\n\n"
-        )
-
-        if second_best and second_best["score"] > 60:
-            report_text += (
-                f"🥈 **الخيار البديل المتاح:**\n"
-                f"📅 **التاريخ:** {second_best['date'].strftime('%Y-%m-%d')} (معدل تيسير: {second_best['score']:.1f}%)\n\n"
-            )
-
-        report_text += (
+            f"⏱ **الساعة الكوكبية الذهبية الموصى بها في ذلك اليوم:**\n"
+            f"{best_hour_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🛑 **فترة النحوسة الكونية الكبرى (يُحذر من البدء فيها):**\n"
-            f"📅 **التاريخ:** {worst_option['date'].strftime('%Y-%m-%d')}\n"
-            f"📉 **معدل التيسير الهابط:** ` {worst_option['score']:.1f}% `\n"
-            f"❌ **السبب الرئيسي:** تضارب حاد في اتصالات الكواكب الحاكمة أو رصد حالة خلو مسار تامة للقمر.\n\n"
+            f"🛑 **أعلى فترة نحوسة واحتراق (يُحذر تماماً من التوقيع أو البدء فيها):**\n"
+            f"📅 **التاريخ:** {worst_option['date'].strftime('%Y-%m-%d')} (مؤشر التيسير: {worst_option['score']:.1f}%)\n"
+            f"❌ **السبب:** هبوط كواكب النية الحاكمة، أو وقوعها في حالة احتراق كلي بالشمس أو تحت ظلال الكسوف.\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🏛 *تم حساب الزوايا والاتصالات الكوكبية بدقة هندسية بناءً على إحداثيات موقعك الجغرافي الحي لحصد أفضل طالع فلكي للبدء.*"
+            f"⚠️ **ملاحظة معرفية:** تعتمد هذه الحسابات الرياضية الدقيقة على قواعد التنجيم التقليدي الكلاسيكي لتحديد النوافذ الزمنية الأكثر توازناً وانسجاماً، ولا تدعمها أدلة علمية قطعية للتنبؤ بالغيب أو حتمية الأحداث الحياتية."
         )
 
         return report_text, decision_key
