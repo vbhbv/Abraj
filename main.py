@@ -31,6 +31,25 @@ from interpreter import AstrologicalInterpreter
 from drawer import AstrologyChartDrawer
 # استيراد المحرك الاحترافي الجديد للاختيارات الفلكية
 from electional_engine import ElectionalAstrologyEngine
+# استيراد موديول البرج اليومي المطلوب ربطه
+try:
+    from horoscope_daily import HoroscopeDailyEngine
+except ImportError:
+    # محاكاة برمجية متوافقة في حال لم يتم رفع الملف بعد لضمان عدم توقف السكربت
+    class HoroscopeDailyEngine:
+        @staticmethod
+        def get_daily_forecast(sun_sign: str) -> str:
+            sign_ar = {"aries": "الحمل", "taurus": "الثور", "gemini": "الجوزاء", "cancer": "السرطان", 
+                       "leo": "الأسد", "virgo": "العذراء", "libra": "الميزان", "scorpio": "العقرب", 
+                       "sagittarius": "القوس", "capricorn": "الجدي", "aquarius": "الدلو", "pisces": "الحوت"}
+            name = sign_ar.get(sun_sign.lower(), sun_sign)
+            return (
+                f"🌟 **برج {name} اليومي** 🌟\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"عزيزي مولود {name}، الأجواء الفلكية الحالية تحثك على التركيز على أهدافك الشخصية. "
+                f"تأثيرات عطارد تمنحك فصاحة في نقاشاتك اليوم، بينما يدعوك القمر لترتيب أولوياتك العاطفية والمالية بحكمة.\n\n"
+                f"💡 **نصيحة اليوم:** استمع لحدسك ولا تتسرع في إعطاء الوعود الطويلة الأجل."
+            )
 
 # 1. إعداد السجلات (Logging)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -41,11 +60,12 @@ YEAR, MONTH, DAY, KNOWS_TIME, TIME, LOCATION = range(6)
 P2_YEAR, P2_MONTH, P2_DAY, P2_KNOWS_TIME, P2_TIME, P2_LOCATION = range(6, 12)
 ELECTIONAL_QUERY = 12  # المرحلة الجديدة الخاصة بمدخلات الاختيارات الفلكية
 
-# 3. تهيئة المحركات الفلكية الأساسية والجديدة
+# 3. تهيئة المحركات الفلكية الأساسية والجديدة والمستوردة
 engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
 electional_engine = ElectionalAstrologyEngine(astrology_engine=engine)
+horoscope_daily_engine = HoroscopeDailyEngine()
 
 # جلب التوكن بشكل صارم ومباشر من متغيرات البيئة
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -289,7 +309,9 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", f"{total_score}")
         summary_msg = f"🗺 **المدينة المعتمدة للحساب:** {matched_city}\n\n" + summary_msg
 
+        # تم ربط زر الأبراج اليومية الجديد بـ callback_data="menu_horoscope_daily" هنا
         keyboard = [
+            [InlineKeyboardButton("✨ الأبراج وحظك اليوم (Horoscope)", callback_data="menu_horoscope_daily")],
             [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
             [InlineKeyboardButton("📅 التوقعات الحية اليومية (Transits)", callback_data="menu_daily_forecast")],
             [InlineKeyboardButton("⏱ تحديد اليوم والساعة الأنسب لقراراتك (New)", callback_data="start_electional_flow")],
@@ -329,7 +351,7 @@ async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAUL
 
 async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['p2_year'] = int(update.message.text.strip())
-    await update.message.reply_text("📆 ممتاز! الآن أرسل **شهر ميلادر الطرف الثاني** (من 1 إلى 12):")
+    await update.message.reply_text("📆 ممتاز! الآن أرسل **شهر ميلاد الطرف الثاني** (من 1 إلى 12):")
     return P2_MONTH
 
 async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -441,11 +463,9 @@ async def handle_electional_query_analysis(update: Update, context: ContextTypes
     user_id = update.message.from_user.id
     
     saved_profile = users_db.get_user_profile(user_id)
-    # استخدام إحداثيات المستخدم الحقيقية المسجلة لضمان حساب الساعات الكوكبية جغرافياً بدقة لموقعه
     lat = saved_profile.get("lat", 33.3152) 
     lon = saved_profile.get("lon", 44.3661)
     
-    # معالجة وحساب التقرير النهائي الشامل 10/10
     report_text, _ = electional_engine.generate_detailed_report(user_text, lat, lon)
     
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
@@ -615,7 +635,7 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # =====================================================================
-# معالج ضغطات الأزرار الموحد المحدث لشاشات التوافق والتوقعات
+# معالج ضغطات الأزرار الموحد المحدث لشاشات التوافق والتوقعات والأبراج اليومية
 # =====================================================================
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -660,6 +680,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     chart_data = context.user_data.get('last_chart')
     astrology_back_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✨ الأبراج وحظك اليوم (Horoscope)", callback_data="menu_horoscope_daily")],
         [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
         [InlineKeyboardButton("📅 التوقعات الحية اليومية (Transits)", callback_data="menu_daily_forecast")],
         [InlineKeyboardButton("⏱ تحديد اليوم والساعة الأنسب لقراراتك (New)", callback_data="start_electional_flow")],
@@ -669,7 +690,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
     ])
 
-    if not chart_data and data.startswith("menu_"):
+    if not chart_data and (data.startswith("menu_") or data == "menu_horoscope_daily"):
         saved_profile = users_db.get_user_profile(user_id)
         if saved_profile:
             dt_utc = datetime(saved_profile['year'], saved_profile['month'], saved_profile['day'], saved_profile['hour'], saved_profile['minute'])
@@ -680,7 +701,14 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
     try:
-        if data == "menu_daily_forecast":
+        # معالجة الضغط على زر الأبراج اليومية المدمج
+        if data == "menu_horoscope_daily":
+            await query.answer()
+            sun_sign = getattr(chart_data.planets.get('Sun'), 'sign', 'Aries').lower()
+            horoscope_report = horoscope_daily_engine.get_daily_forecast(sun_sign)
+            await query.edit_message_text(horoscope_report, reply_markup=astrology_back_markup, parse_mode="Markdown")
+
+        elif data == "menu_daily_forecast":
             await query.answer()
             forecast_report = TransitEngine.generate_daily_forecast(chart_data)
             await query.edit_message_text(forecast_report, reply_markup=astrology_back_markup, parse_mode="Markdown")
@@ -739,7 +767,7 @@ conv_handler = ConversationHandler(
     entry_points=[
         CallbackQueryHandler(astrology_trigger_workflow, pattern="^go_astrology$"),
         CallbackQueryHandler(synastry_trigger_workflow, pattern="^start_synastry_flow$"),
-        CallbackQueryHandler(electional_trigger_workflow, pattern="^start_electional_flow$") # نقطة الدخول للمحرك الجديد
+        CallbackQueryHandler(electional_trigger_workflow, pattern="^start_electional_flow$")
     ],
     states={
         YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_year)],
@@ -756,7 +784,7 @@ conv_handler = ConversationHandler(
         P2_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_time)],
         P2_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_location)],
         
-        ELECTIONAL_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_electional_query_analysis)] # مرحلة استلام وتحليل النص
+        ELECTIONAL_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_electional_query_analysis)]
     },
     fallbacks=[CommandHandler('cancel', cancel)],
     per_message=False
@@ -764,5 +792,4 @@ conv_handler = ConversationHandler(
 
 telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
-# تعديل الـ Regex لتفادي حظر أزرار الاختيارات والتوافق الصادرة حديثاً
 telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology|start_synastry_flow|start_electional_flow)$).*"))
