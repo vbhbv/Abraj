@@ -48,13 +48,13 @@ except ImportError:
         def compute_natal_chart(self, dt, lat, lon): 
             return type('MockChart', (object,), {'ascendant': 'Aries', 'planets': {}, 'houses': {}, 'aspects': []})()
     class AstrologicalInterpreter:
-        def get_minimal_summary(self, c): return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف*"
+        def get_minimal_summary(self, c): return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف\\.*"
         def get_detailed_report(self, c): return "تقرير تفصيلي احترافي كاملاً من المحرك الخاص\\."
     class AstrologyChartDrawer:
         def generate_chart_png(self, c): return b""
     class ElectionalAstrologyEngine:
         def __init__(self, astrology_engine): pass
-        def generate_detailed_report(self, t, lat, lon): return "تقرير الاختيارات الحقيقي المتكامل", None
+        def generate_detailed_report(self, t, lat, lon): return "تقرير الاختيارات الحقيقي المتكامل\\.", None
 
 try:
     from transit_engine import TransitEngine
@@ -111,7 +111,6 @@ telegram_app = Application.builder().token(TOKEN).updater(None).rate_limiter(AIO
 # =====================================================================
 CHART_CACHE = TTLCache(maxsize=1500, ttl=7200)
 
-# قاموس أقفال برمجية ثابت ومؤمن، يتم تصفية القفل المنتهي منه عبر الـ Garbage Collector الدوري
 _fixed_key_locks: Dict[str, asyncio.Lock] = {}
 
 def get_per_key_lock(cache_key: str) -> asyncio.Lock:
@@ -132,6 +131,10 @@ def invalidate_user_old_cache(user_id: int, prefix: str = "natal"):
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', text)
+
+def safe_escape_dots_only(text: str) -> str:
+    """يقوم بهروب النقاط التي لم يتم هروبها مسبقاً لحماية MarkdownV2 من الانهيار بدون إفساد التنسيقات الأخرى"""
+    return re.sub(r'(?<!\\)\.', r'\.', text)
 
 # =====================================================================
 # 3. مسبح الخيوط المتكيف (Dynamic Thread Pool Executor)
@@ -192,7 +195,6 @@ class AsyncUsersDatabase:
                 max_queries=50000, max_inactive_connection_lifetime=300
             )
             async with self.pool.acquire() as conn:
-                # 1. إنشاء الجدول الأساسي إذا لم يكن موجوداً من قبل
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_profiles (
                         user_id BIGINT PRIMARY KEY,
@@ -201,7 +203,6 @@ class AsyncUsersDatabase:
                     );
                 """)
                 
-                # 2. فحص عمود birth_year لتحديد ما إذا كان الجدول قديماً ويحتاج لترقية (Migration)
                 column_check = await conn.fetchval("""
                     SELECT EXISTS (
                         SELECT FROM information_schema.columns 
@@ -225,7 +226,6 @@ class AsyncUsersDatabase:
                     """)
                     logger.info("✅ [Migration] New structured columns injected successfully.")
 
-                # 3. التأكد من وجود الفهرس لتسريع استعلامات البحث
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_search ON user_profiles(user_id);")
                 
             logger.info("✅ Async PostgreSQL Pool initialized with auto-migration safety guards.")
@@ -361,16 +361,13 @@ def convert_local_time_to_utc(user_data: dict, lat: float, lon: float) -> dateti
 async def get_or_compute_user_chart(user_id: int, user_profile: dict, engine) -> Optional[Any]:
     cache_key = generate_blake2_key(user_id, user_profile, "natal")
     
-    # فحص الكاش المبدئي
     cached_data = CHART_CACHE.get(cache_key)
     if cached_data:
         METRICS["cache_hits"] += 1
         return cached_data
         
-    # جلب القفل الخاص الثابت لمنع الـ Cache Stampede وسد ثغرة السباق
     key_lock = get_per_key_lock(cache_key)
     async with key_lock:
-        # التحقق المزدوج الذكي (Double Check Lock)
         cached_data = CHART_CACHE.get(cache_key)
         if cached_data:
             METRICS["cache_hits"] += 1
@@ -396,6 +393,7 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         total_score = 75
         summary_msg = interpreter.get_minimal_summary(chart_data)
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", f"{total_score}")
+        summary_msg = safe_escape_dots_only(summary_msg)
         
         header = f"🗺 *المدينة والمنطقة الزمنية المسجلة:* {escape_markdown_v2(matched_city)}\n\n"
         final_msg = header + summary_msg
@@ -511,13 +509,16 @@ async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     res = SynastryEngine.calculate_compatibility(chart1, chart2)
 
+    description_escaped = safe_escape_dots_only(res['description'])
+    verdict_escaped = safe_escape_dots_only(res['verdict'])
+
     report_text = (
         f"💞 *تقرير توافق الأبراج والخرائط الفلكية \\(Synastry\\)* 💞\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📊 *نسبة التوافق الإجمالية:* ` {res['score']}% `\n"
-        f"الحالة الفلكية: {escape_markdown_v2(res['verdict'])}\n\n"
+        f"الحالة الفلكية: {escape_markdown_v2(verdict_escaped)}\n\n"
         f"💬 *التحليل الفلكي والمقارن للعلاقة:*\n"
-        f"{res['description']}\n\n"
+        f"{description_escaped}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
 
@@ -550,9 +551,10 @@ async def handle_electional_query_analysis(update: Update, context: ContextTypes
     lon = saved_profile.get("lon", 44.3661)
     
     report_text, _ = electional_engine.generate_detailed_report(user_text, lat, lon)
+    report_escaped = safe_escape_dots_only(report_text)
     
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
-    await update.message.reply_text(escape_markdown_v2(report_text), reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(escape_markdown_v2(report_escaped), reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
 # =====================================================================
@@ -825,6 +827,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         chosen = khira_engine.get_seeded_khira(user_id, saved_profile)
         result_text = f"🔮 *نتيجـة الخيـرة الخاصـة بك لهذا اليوم*\n━━━━━━━━━━━━━━━━━━━━\n\n📖 *الآية الشريفة:*\n__{escape_markdown_v2(chosen.get('verse', ''))}__\n\n📊 *الحكم والدرجة:*\nدرجة التيسير: {escape_markdown_v2(chosen.get('stars', ''))}\n\n💬 *التوجيه والتفسير:*\n{escape_markdown_v2(chosen.get('interpretation', ''))}\n\n🤲 *الدعاء المستحب:*\n_{escape_markdown_v2(chosen.get('dua', ''))}_\n\n━━━━━━━━━━━━━━━━━━━━"
+        result_text = safe_escape_dots_only(result_text)
         await query.edit_message_text(result_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
@@ -858,16 +861,19 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if hasattr(chart_data, 'planets') and chart_data.planets and chart_data.planets.get('Sun'):
                 sun_sign = getattr(chart_data.planets.get('Sun'), 'sign', 'Aries')
             horoscope_report = HoroscopeDailyEngine.get_daily_forecast(sun_sign)
+            horoscope_report = safe_escape_dots_only(horoscope_report)
             await query.edit_message_text(escape_markdown_v2(horoscope_report), reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
         elif data == "menu_daily_forecast":
             await query.answer()
             forecast_report = TransitEngine.generate_daily_forecast(chart_data)
+            forecast_report = safe_escape_dots_only(forecast_report)
             await query.edit_message_text(escape_markdown_v2(forecast_report), reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
         elif data == "menu_read_all":
             await query.answer()
             full_report = interpreter.get_detailed_report(chart_data)
+            full_report = safe_escape_dots_only(full_report)
             asc_sign = getattr(chart_data, 'ascendant', 'Aries')
             complete_analysis = f"🪐 *التقرير الفلكي الشامل والكامل لخريطتك* 🪐\n━━━━━━━━━━━━━━━━━━━━\n• *البرج الصاعد \\(الطالع\\):* {escape_markdown_v2(asc_sign)}\n━━━━━━━━━━━━━━━━━━━━\n\n{full_report}"
             
@@ -928,7 +934,7 @@ conv_handler = ConversationHandler(
     states={
         YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_year)],
         MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_month)],
-        DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_day)],
+        DAY: [filters.TEXT & ~filters.COMMAND, p_day],
         KNOWS_TIME: [CallbackQueryHandler(p_knows_time)],
         TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_time)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_location)],
