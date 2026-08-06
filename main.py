@@ -31,29 +31,46 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler, AIORateLimiter
 )
 
+# إعداد الـ Logging الهيكلي للإنتاج والـ Metrics
+logging.basicConfig(format='%(asctime)s - [User: %(processName)s] - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # ===================================================================== #
 # 1. إدارة الـ Imports والمحركات الفلكية والـ Fallbacks الآمنة
+#    -- تم فصل كل استيراد لوحده حتى لا يُسقط فشل مكتبة واحدة بقية المحركات
+#       بصمت، ويُسجَّل الآن اسم المحرك وسبب الفشل الحقيقي في اللوقز --
 # ===================================================================== #
+
 try:
     from chart import CoreAstrologyEngine
-    from interpreter import AstrologicalInterpreter
-    from drawer import AstrologyChartDrawer
-    from electional_engine import ElectionalAstrologyEngine
-except ImportError:
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد chart.py (CoreAstrologyEngine): {e}", exc_info=True)
     class CoreAstrologyEngine:
         def compute_natal_chart(self, dt, lat, lon):
             return type('MockChart', (object,), {'ascendant': 'Aries', 'planets': {}, 'houses': {}, 'aspects': []})()
 
+try:
+    from interpreter import AstrologicalInterpreter
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد interpreter.py (AstrologicalInterpreter): {e}", exc_info=True)
     class AstrologicalInterpreter:
         def get_minimal_summary(self, c):
             return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف.*"
         def get_detailed_report(self, c):
             return "تقرير تفصيلي احترافي كاملاً من المحرك الخاص."
 
+try:
+    from drawer import AstrologyChartDrawer
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد drawer.py (AstrologyChartDrawer): {e}", exc_info=True)
     class AstrologyChartDrawer:
         def generate_chart_png(self, c):
             return b""
 
+try:
+    from electional_engine import ElectionalAstrologyEngine
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد electional_engine.py (ElectionalAstrologyEngine): {e}", exc_info=True)
     class ElectionalAstrologyEngine:
         def __init__(self, astrology_engine):
             pass
@@ -62,13 +79,17 @@ except ImportError:
 
 try:
     from transit_engine import TransitEngine
-    from synastry_engine import SynastryEngine
-except ImportError:
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد transit_engine.py (TransitEngine): {e}", exc_info=True)
     class TransitEngine:
         @staticmethod
         def generate_daily_forecast(chart_data) -> str:
             return "🪐 *تقرير العبور الفلكي الحي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nحركة القمر الحالية تدعم ترتيب أوراقك المالية والمهنية بنجاح."
 
+try:
+    from synastry_engine import SynastryEngine
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد synastry_engine.py (SynastryEngine): {e}", exc_info=True)
     class SynastryEngine:
         @staticmethod
         def calculate_compatibility(c1, c2) -> dict:
@@ -76,15 +97,12 @@ except ImportError:
 
 try:
     from horoscope_daily import HoroscopeDailyEngine
-except ImportError:
+except ImportError as e:
+    logger.critical(f"🚨 [Fallback Activated] فشل استيراد horoscope_daily.py (HoroscopeDailyEngine): {e}", exc_info=True)
     class HoroscopeDailyEngine:
         @staticmethod
         def get_daily_forecast(sun_sign: str) -> str:
             return f"🌟 *توقعات برجك الشمسي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nالأجواء إيجابية وداعمة لخطواتك الجديدة."
-
-# إعداد الـ Logging الهيكلي للإنتاج والـ Metrics
-logging.basicConfig(format='%(asctime)s - [User: %(processName)s] - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 METRICS = {
     "cache_hits": 0,
@@ -1022,6 +1040,11 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 img_bytes_data = await draw_chart_safe(drawer, adapted_chart, user_id)
 
                 if not img_bytes_data:
+                    logger.error(
+                        f"🚨 [Empty Image] drawer.generate_chart_png() رجّع بايتات فارغة لليوزر={user_id}. "
+                        f"غالبًا drawer هو النسخة الوهمية (Fallback) بسبب فشل استيراد drawer.py - راجع رسائل "
+                        f"[Fallback Activated] في بداية اللوقز."
+                    )
                     err_draw = intelligent_markdown_v2_escape("⚠️ المحرك لم يقم بتوليد مخرجات رسومية صالحة حالياً.")
                     await query.message.reply_text(err_draw, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
                     return
@@ -1035,11 +1058,11 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     reply_markup=astrology_back_markup
                 )
             except Exception as draw_err:
-                logger.error(f"Error drawing chart for user={draw_err}")
+                logger.error(f"Error drawing chart for user={user_id}: {draw_err}", exc_info=True)
                 err_draw_fail = intelligent_markdown_v2_escape("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض.")
                 await query.message.reply_text(err_draw_fail, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as exc:
-        logger.error(f"Error handling menu click for user={user_id}: {exc}")
+        logger.error(f"Error handling menu click for user={user_id}: {exc}", exc_info=True)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     cancel_msg = intelligent_markdown_v2_escape("🚫 تم إلغاء العملية الحالية بنجاح. ارسل /start للبدء مجدداً.")
