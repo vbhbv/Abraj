@@ -16,7 +16,6 @@ class AstrologyChartDrawer:
         self.r_planets_in = 290  
         self.r_houses_in = 250   
         
-        # تم استبدال الرموز بالاختصارات النصية الفلكية العالمية المكونة من 3 أحرف لضمان القراءة
         self.ZODIAC_UNICODE = {
             "Aries": "ARI", "Taurus": "TAU", "Gemini": "GEM", "Cancer": "CAN",
             "Leo": "LEO", "Virgo": "VIR", "Libra": "LIB", "Scorpio": "SCO",
@@ -83,13 +82,20 @@ class AstrologyChartDrawer:
         image = Image.new("RGBA", (self.size, self.size), (13, 17, 23, 255))
         image_draw = ImageDraw.Draw(image)
         
-        # استخدام الخط الافتراضي مع أحجام مناسبة للنصوص الإنجليزية المدمجة بكافة السيرفرات
+        # تحسين تحميل الخطوط بأمان بدون حدوث Crash على سيرفرات Linux/Railway
         try:
-            font_zodiac = ImageFont.load_default(size=14)
-            font_planet = ImageFont.load_default(size=13)
-            font_text = ImageFont.load_default(size=11)
-        except Exception:
-            font_zodiac = font_planet = font_text = ImageFont.load_default()
+            # محاولة قراءة خط النظام الافتراضي الحقيقي
+            font_zodiac = ImageFont.truetype("DejaVuSans.ttf", 14)
+            font_planet = ImageFont.truetype("DejaVuSans.ttf", 13)
+            font_text = ImageFont.truetype("DejaVuSans.ttf", 11)
+        except IOError:
+            try:
+                font_zodiac = ImageFont.load_default(size=14)
+                font_planet = ImageFont.load_default(size=13)
+                font_text = ImageFont.load_default(size=11)
+            except TypeError:
+                # تحسباً للإصدارات القديمة من Pillow التي لا تقبل size
+                font_zodiac = font_planet = font_text = ImageFont.load_default()
 
         asc_deg = getattr(chart_data, 'ascendant_degree', 0.0)
         
@@ -117,7 +123,11 @@ class AstrologyChartDrawer:
         # 4. رسم خطوط البيوت الـ 12 وتسمية الأوتاد
         if hasattr(chart_data, 'houses') and chart_data.houses:
             axis_labels = {1: "ASC", 10: "MC", 7: "DSC", 4: "IC"}
-            for h_num, h_deg in chart_data.houses.items():
+            
+            # معالجة القواميس أو الأغراض
+            houses_items = chart_data.houses.items() if isinstance(chart_data.houses, dict) else enumerate(chart_data.houses, start=1)
+            
+            for h_num, h_deg in houses_items:
                 rel_angle = h_deg - asc_deg
                 x1, y1 = self._get_coordinates(rel_angle, self.r_houses_in)
                 x2, y2 = self._get_coordinates(rel_angle, self.r_zodiac_in)
@@ -136,10 +146,11 @@ class AstrologyChartDrawer:
 
         # 5. رسم خطوط الاتصالات الداخلية
         if hasattr(chart_data, 'aspects') and chart_data.aspects:
+            planets_dict = chart_data.planets if isinstance(chart_data.planets, dict) else {}
             for aspect in chart_data.aspects:
-                if aspect.p1 in chart_data.planets and aspect.p2 in chart_data.planets:
-                    p1_deg = chart_data.planets[aspect.p1].longitude
-                    p2_deg = chart_data.planets[aspect.p2].longitude
+                if aspect.p1 in planets_dict and aspect.p2 in planets_dict:
+                    p1_deg = getattr(planets_dict[aspect.p1], 'longitude', 0.0)
+                    p2_deg = getattr(planets_dict[aspect.p2], 'longitude', 0.0)
                     
                     a1 = p1_deg - asc_deg
                     a2 = p2_deg - asc_deg
@@ -150,21 +161,24 @@ class AstrologyChartDrawer:
                     orb = getattr(aspect, 'orb', 0.0)
                     opacity = int(max(0.2, round(1.0 - (orb / 8.0), 2)) * 255)
                     
-                    base_rgb = self.ASPECT_COLORS.get(aspect.type, (139, 148, 158))
+                    aspect_type = getattr(aspect, 'type', '')
+                    base_rgb = self.ASPECT_COLORS.get(aspect_type, (139, 148, 158))
                     color_rgba = (base_rgb[0], base_rgb[1], base_rgb[2], opacity)
                     
                     image_draw.line([(x1, y1), (x2, y2)], fill=color_rgba, width=2)
 
         # 6. فك اشتباك تكتل درجات الكواكب
         raw_planets_data = []
-        for p_name, p_data in chart_data.planets.items():
+        planets_items = chart_data.planets.items() if isinstance(chart_data.planets, dict) else []
+        
+        for p_name, p_data in planets_items:
             if p_name in self.PLANET_UNICODE:
-                p_abs_deg = p_data.longitude
+                p_abs_deg = getattr(p_data, 'longitude', 0.0)
                 raw_planets_data.append({
                     'name': p_name,
                     'orig_angle': p_abs_deg - asc_deg,
                     'curr_angle': p_abs_deg - asc_deg,
-                    'display_deg': p_data.longitude % 30
+                    'display_deg': p_abs_deg % 30
                 })
 
         resolved_planets = self._resolve_collisions(raw_planets_data, min_dist=8.5)
