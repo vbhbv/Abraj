@@ -993,7 +993,7 @@ telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(
 # =====================================================================
 # 11. تشغيل خادم Uvicorn باستمرار لتنفيذ التطبيق (FastAPI Webhook Server)
 # =====================================================================
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+if __name__ == '__main__':
+    telegram_app.run_polling()
+    
+    
