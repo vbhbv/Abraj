@@ -14,6 +14,10 @@ from typing import Dict, Any, List, Tuple, Optional
 import asyncpg
 import pytz
 from cachetools import TTLCache
+from dotenv import load_dotenv
+
+# تحميل متغيرات البيئة من ملف .env
+load_dotenv()
 
 try:
     from timezonefinder import TimezoneFinder
@@ -101,10 +105,11 @@ interpreter = AstrologicalInterpreter()
 drawer = AstrologyChartDrawer()
 electional_engine = ElectionalAstrologyEngine(astrology_engine=engine)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBHOOK_URL = "https://Abraj-production.up.railway.app/webhook"
+TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://Abraj-production.up.railway.app/webhook")
 
-telegram_app = Application.builder().token(TOKEN).updater(None).rate_limiter(AIORateLimiter()).build()
+# تعديل وتصحيح بناء الـ Application لتفادي أخطاء الـ Polling/Updater
+telegram_app = Application.builder().token(TOKEN).rate_limiter(AIORateLimiter()).build()
 
 # =====================================================================
 # 2. إدارة الـ Cache الموحد والثابت لمنع الـ Race Condition ومعالجة النصوص
@@ -188,7 +193,8 @@ class AsyncUsersDatabase:
 
     async def connect(self):
         if not self.db_url:
-            raise ValueError("❌ DATABASE_URL missing!")
+            logger.warning("⚠️ DATABASE_URL missing! Falling back to local/disabled state.")
+            return
         try:
             self.pool = await asyncpg.create_pool(
                 self.db_url, min_size=2, max_size=15,
@@ -231,7 +237,6 @@ class AsyncUsersDatabase:
             logger.info("✅ Async PostgreSQL Pool initialized with auto-migration safety guards.")
         except Exception as e:
             logger.critical(f"Database connection pool initiation failed: {e}", exc_info=True)
-            raise e
 
     async def get_user_profile(self, user_id: int) -> Dict[str, Any]:
         if not self.pool: return {}
@@ -443,7 +448,7 @@ async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         err_yr = intelligent_markdown_v2_escape("⚠️ سنة غير صالحة. يرجى إدخال سنة ميلاد حقيقية بالأرقام:")
         await update.message.reply_text(err_yr, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_YEAR
-    next_m = intelligent_markdown_v2_escape("ممتاز! الآن أرسل *شهر ميلادغ الطرف الثاني* (من 1 إلى 12):")
+    next_m = intelligent_markdown_v2_escape("ممتاز! الآن أرسل *شهر ميلاد الطرف الثاني* (من 1 إلى 12):")
     await update.message.reply_text(next_m, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_MONTH
 
@@ -655,8 +660,9 @@ async def lifespan(app: FastAPI):
     gc_task = asyncio.create_task(cache_and_locks_garbage_collector())
     
     await telegram_app.initialize()
-    await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
-    logger.info(f"✅ Webhook applied securely to production: {WEBHOOK_URL}")
+    if WEBHOOK_URL and "http" in WEBHOOK_URL:
+        await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
+        logger.info(f"✅ Webhook applied securely: {WEBHOOK_URL}")
     await telegram_app.start()
     yield
     logger.info("🛑 Initiating graceful shutdown sequence...")
@@ -983,3 +989,11 @@ conv_handler = ConversationHandler(
 telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
 telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology|start_synastry_flow|start_electional_flow)$).*"))
+
+# =====================================================================
+# 11. تشغيل خادم Uvicorn باستمرار لتنفيذ التطبيق (FastAPI Webhook Server)
+# =====================================================================
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
