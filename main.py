@@ -10,7 +10,6 @@ import re
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Tuple, Optional
-
 import asyncpg
 import pytz
 from cachetools import TTLCache
@@ -27,21 +26,14 @@ except ImportError:
 
 from fastapi import FastAPI, Request, Response
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode  
+from telegram.constants import ParseMode
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    ConversationHandler,
-    AIORateLimiter
+    Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler, AIORateLimiter
 )
 
-# =====================================================================
+# ===================================================================== #
 # 1. إدارة الـ Imports والمحركات الفلكية والـ Fallbacks الآمنة
-# =====================================================================
+# ===================================================================== #
 try:
     from chart import CoreAstrologyEngine
     from interpreter import AstrologicalInterpreter
@@ -49,16 +41,24 @@ try:
     from electional_engine import ElectionalAstrologyEngine
 except ImportError:
     class CoreAstrologyEngine:
-        def compute_natal_chart(self, dt, lat, lon): 
+        def compute_natal_chart(self, dt, lat, lon):
             return type('MockChart', (object,), {'ascendant': 'Aries', 'planets': {}, 'houses': {}, 'aspects': []})()
+
     class AstrologicalInterpreter:
-        def get_minimal_summary(self, c): return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف.*"
-        def get_detailed_report(self, c): return "تقرير تفصيلي احترافي كاملاً من المحرك الخاص."
+        def get_minimal_summary(self, c):
+            return "SCORE_PLACEHOLDER \n*تحليل مبدئي خفيف.*"
+        def get_detailed_report(self, c):
+            return "تقرير تفصيلي احترافي كاملاً من المحرك الخاص."
+
     class AstrologyChartDrawer:
-        def generate_chart_png(self, c): return b""
+        def generate_chart_png(self, c):
+            return b""
+
     class ElectionalAstrologyEngine:
-        def __init__(self, astrology_engine): pass
-        def generate_detailed_report(self, t, lat, lon): return "تقرير الاختيارات الحقيقي المتكامل.", None
+        def __init__(self, astrology_engine):
+            pass
+        def generate_detailed_report(self, t, lat, lon):
+            return "تقرير الاختيارات الحقيقي المتكامل.", None
 
 try:
     from transit_engine import TransitEngine
@@ -68,6 +68,7 @@ except ImportError:
         @staticmethod
         def generate_daily_forecast(chart_data) -> str:
             return "🪐 *تقرير العبور الفلكي الحي لهذا اليوم*:\n━━━━━━━━━━━━━━━━━━━━\nحركة القمر الحالية تدعم ترتيب أوراقك المالية والمهنية بنجاح."
+
     class SynastryEngine:
         @staticmethod
         def calculate_compatibility(c1, c2) -> dict:
@@ -85,7 +86,6 @@ except ImportError:
 logging.basicConfig(format='%(asctime)s - [User: %(processName)s] - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# مقاييس الأداء الداخلية للمراقبة والـ Metrics
 METRICS = {
     "cache_hits": 0,
     "cache_misses": 0,
@@ -95,10 +95,9 @@ METRICS = {
     "db_retries": 0
 }
 
-# مراحل الـ Conversation
 YEAR, MONTH, DAY, KNOWS_TIME, TIME, LOCATION = range(6)
 P2_YEAR, P2_MONTH, P2_DAY, P2_KNOWS_TIME, P2_TIME, P2_LOCATION = range(6, 12)
-ELECTIONAL_QUERY = 12  
+ELECTIONAL_QUERY = 12
 
 engine = CoreAstrologyEngine()
 interpreter = AstrologicalInterpreter()
@@ -108,12 +107,9 @@ electional_engine = ElectionalAstrologyEngine(astrology_engine=engine)
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://Abraj-production.up.railway.app/webhook")
 
-# تعديل وتصحيح بناء الـ Application لتفادي أخطاء الـ Polling/Updater
-telegram_app = Application.builder().token(TOKEN).rate_limiter(AIORateLimiter()).build()
-
-# =====================================================================
-# 2. إدارة الـ Cache الموحد والثابت لمنع الـ Race Condition ومعالجة النصوص
-# =====================================================================
+# ===================================================================== #
+# 2. إدارة الـ Cache ومعالجة النصوص وتسكين الرموز
+# ===================================================================== #
 CHART_CACHE = TTLCache(maxsize=1500, ttl=7200)
 _fixed_key_locks: Dict[str, asyncio.Lock] = {}
 
@@ -136,14 +132,15 @@ def intelligent_markdown_v2_escape(text: str) -> str:
     """يقوم بهروب محمي للرموز الحساسة في التليجرام دون المساس بتركيبة التنسيقات العريضة والمائلة الحية"""
     if not text:
         return ""
+    text = text.replace("\\", r"\\")
     escape_chars = r'[]()~`>#+-=|{}.!'
     for char in escape_chars:
         text = text.replace(char, f"\\{char}")
     return text
 
-# =====================================================================
+# ===================================================================== #
 # 3. مسبح الخيوط المتكيف (Dynamic Thread Pool Executor)
-# =====================================================================
+# ===================================================================== #
 from concurrent.futures import ThreadPoolExecutor
 
 computed_max_workers = min(32, (os.cpu_count() or 2) * 2)
@@ -183,22 +180,27 @@ async def draw_chart_safe(drawer, adapted_chart, user_id: int) -> bytes:
         logger.error(f"🚨 [Timeout] AstrologyChartDrawer rendering timed out for User={user_id}")
         raise
 
-# =====================================================================
-# 4. محرك الـ PostgreSQL المطور مع نظام التحديث والترقية التلقائية
-# =====================================================================
+# ===================================================================== #
+# 4. محرك الـ PostgreSQL المطور
+# ===================================================================== #
 class AsyncUsersDatabase:
     def __init__(self):
         self.db_url = os.getenv("DATABASE_URL")
         self.pool: Optional[asyncpg.Pool] = None
 
     async def connect(self):
+        if self.pool is not None:
+            return
         if not self.db_url:
             logger.warning("⚠️ DATABASE_URL missing! Falling back to local/disabled state.")
             return
         try:
             self.pool = await asyncpg.create_pool(
-                self.db_url, min_size=2, max_size=15,
-                max_queries=50000, max_inactive_connection_lifetime=300
+                self.db_url,
+                min_size=2,
+                max_size=15,
+                max_queries=50000,
+                max_inactive_connection_lifetime=300
             )
             async with self.pool.acquire() as conn:
                 await conn.execute("""
@@ -208,18 +210,16 @@ class AsyncUsersDatabase:
                         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                
                 column_check = await conn.fetchval("""
                     SELECT EXISTS (
-                        SELECT FROM information_schema.columns 
+                        SELECT FROM information_schema.columns
                         WHERE table_name='user_profiles' AND column_name='birth_year'
                     );
                 """)
-                
                 if not column_check:
                     logger.info("⚠️ [Migration] Old or basic schema detected! Injecting structured columns...")
                     await conn.execute("""
-                        ALTER TABLE user_profiles 
+                        ALTER TABLE user_profiles
                         ADD COLUMN IF NOT EXISTS birth_year INT DEFAULT 1990,
                         ADD COLUMN IF NOT EXISTS birth_month INT DEFAULT 1,
                         ADD COLUMN IF NOT EXISTS birth_day INT DEFAULT 1,
@@ -233,13 +233,13 @@ class AsyncUsersDatabase:
                     logger.info("✅ [Migration] New structured columns injected successfully.")
 
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_user_profiles_search ON user_profiles(user_id);")
-                
             logger.info("✅ Async PostgreSQL Pool initialized with auto-migration safety guards.")
         except Exception as e:
             logger.critical(f"Database connection pool initiation failed: {e}", exc_info=True)
 
     async def get_user_profile(self, user_id: int) -> Dict[str, Any]:
-        if not self.pool: return {}
+        if not self.pool:
+            return {}
         async def _get():
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow("""
@@ -248,32 +248,45 @@ class AsyncUsersDatabase:
                 """, user_id)
                 if row:
                     return {
-                        "year": row["birth_year"], "month": row["birth_month"], "day": row["birth_day"],
-                        "hour": row["birth_hour"], "minute": row["birth_minute"],
-                        "lat": float(row["lat"]), "lon": float(row["lon"]),
-                        "city": row["city"], "timezone": row["timezone"]
+                        "year": row["birth_year"],
+                        "month": row["birth_month"],
+                        "day": row["birth_day"],
+                        "hour": row["birth_hour"],
+                        "minute": row["birth_minute"],
+                        "lat": float(row["lat"]),
+                        "lon": float(row["lon"]),
+                        "city": row["city"],
+                        "timezone": row["timezone"]
                     }
-            return {}
+                return {}
         return await self.execute_with_retry(_get)
 
     async def save_user_profile(self, user_id: int, p: Dict[str, Any]):
-        if not self.pool: return
+        if not self.pool:
+            return
         async def _save():
             async with self.pool.acquire() as conn:
                 await conn.execute("""
                     INSERT INTO user_profiles (
                         user_id, birth_year, birth_month, birth_day, birth_hour, birth_minute, lat, lon, city, timezone, last_active
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
-                    ON CONFLICT (user_id) 
-                    DO UPDATE SET 
-                        birth_year = EXCLUDED.birth_year, birth_month = EXCLUDED.birth_month, birth_day = EXCLUDED.birth_day,
-                        birth_hour = EXCLUDED.birth_hour, birth_minute = EXCLUDED.birth_minute, lat = EXCLUDED.lat,
-                        lon = EXCLUDED.lon, city = EXCLUDED.city, timezone = EXCLUDED.timezone, last_active = CURRENT_TIMESTAMP;
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        birth_year = EXCLUDED.birth_year,
+                        birth_month = EXCLUDED.birth_month,
+                        birth_day = EXCLUDED.birth_day,
+                        birth_hour = EXCLUDED.birth_hour,
+                        birth_minute = EXCLUDED.birth_minute,
+                        lat = EXCLUDED.lat,
+                        lon = EXCLUDED.lon,
+                        city = EXCLUDED.city,
+                        timezone = EXCLUDED.timezone,
+                        last_active = CURRENT_TIMESTAMP;
                 """, user_id, p["year"], p["month"], p["day"], p["hour"], p["minute"], p["lat"], p["lon"], p["city"], p["timezone"])
         await self.execute_with_retry(_save)
 
     async def update_active_heartbeat(self, user_id: int):
-        if not self.pool: return
+        if not self.pool:
+            return
         async def _heartbeat():
             async with self.pool.acquire() as conn:
                 await conn.execute("UPDATE user_profiles SET last_active = CURRENT_TIMESTAMP WHERE user_id = $1;", user_id)
@@ -283,7 +296,8 @@ class AsyncUsersDatabase:
             pass
 
     async def delete_user_profile(self, user_id: int):
-        if not self.pool: return
+        if not self.pool:
+            return
         async def _delete():
             async with self.pool.acquire() as conn:
                 await conn.execute("DELETE FROM user_profiles WHERE user_id = $1;", user_id)
@@ -305,9 +319,20 @@ class AsyncUsersDatabase:
 
 async_db = AsyncUsersDatabase()
 
-# =====================================================================
-# 5. محرك الجغرافيا وتحديد المنطقة الزمنية لمرة واحدة (Timezone Caching)
-# =====================================================================
+async def post_init_hook(application: Application):
+    """يضمن تهيئة قاعدة البيانات سواء تم تشغيل البوت عبر Polling أو Webhook"""
+    await async_db.connect()
+
+# بناء الـ Application مع ربط الـ post_init
+telegram_app = Application.builder()\
+    .token(TOKEN)\
+    .rate_limiter(AIORateLimiter())\
+    .post_init(post_init_hook)\
+    .build()
+
+# ===================================================================== #
+# 5. محرك الجغرافيا وتحديد المنطقة الزمنية (Geocoding Engine)
+# ===================================================================== #
 class EnhancedGeocodingEngine:
     def __init__(self):
         self.city_db = {
@@ -333,7 +358,7 @@ class EnhancedGeocodingEngine:
             "cairo": (30.0444, 31.2357), "القاهرة": (30.0444, 31.2357),
             "riyadh": (24.7136, 46.6753), "الرياض": (24.7136, 46.6753)
         }
-        self.default_coords = (33.3152, 44.3661) 
+        self.default_coords = (33.3152, 44.3661)
 
     def clean_text(self, text: str) -> str:
         return text.strip().lower().replace("ة", "ه").replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
@@ -345,9 +370,9 @@ class EnhancedGeocodingEngine:
                 tz_resolved = "UTC"
                 if tf_engine:
                     tz_found = tf_engine.timezone_at(lng=coords[1], lat=coords[0])
-                    if tz_found: tz_resolved = tz_found
+                    if tz_found:
+                        tz_resolved = tz_found
                 return city_key.capitalize(), coords[0], coords[1], tz_resolved
-        
         return "Baghdad (Default)", self.default_coords[0], self.default_coords[1], "Asia/Baghdad"
 
 local_geo = EnhancedGeocodingEngine()
@@ -365,24 +390,23 @@ def convert_local_time_to_utc(user_data: dict, lat: float, lon: float) -> dateti
 
 async def get_or_compute_user_chart(user_id: int, user_profile: dict, engine) -> Optional[Any]:
     cache_key = generate_blake2_key(user_id, user_profile, "natal")
-    
     cached_data = CHART_CACHE.get(cache_key)
     if cached_data:
         METRICS["cache_hits"] += 1
         return cached_data
-        
+
     key_lock = get_per_key_lock(cache_key)
     async with key_lock:
         cached_data = CHART_CACHE.get(cache_key)
         if cached_data:
             METRICS["cache_hits"] += 1
             return cached_data
-            
+
         METRICS["cache_misses"] += 1
         lat = user_profile.get('lat', 33.3152)
         lon = user_profile.get('lon', 44.3661)
         dt_utc = convert_local_time_to_utc(user_profile, lat, lon)
-        
+
         chart_data = await compute_chart_safe(engine, dt_utc, lat, lon, user_id)
         if chart_data:
             CHART_CACHE[cache_key] = chart_data
@@ -399,10 +423,9 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
         total_score = 75
         summary_msg = interpreter.get_minimal_summary(chart_data)
         summary_msg = summary_msg.replace("SCORE_PLACEHOLDER", f"{total_score}")
-        summary_msg = intelligent_markdown_v2_escape(summary_msg)
-        
+
         header = f"🗺 *المدينة والمنطقة الزمنية المسجلة:* {intelligent_markdown_v2_escape(matched_city)}\n\n"
-        final_msg = header + summary_msg
+        final_msg = header + intelligent_markdown_v2_escape(summary_msg)
 
         keyboard = [
             [InlineKeyboardButton("✨ الأبراج وحظك اليوم", callback_data="menu_horoscope_daily")],
@@ -414,16 +437,22 @@ async def process_and_send_astrology_report(chat_id: int, user_data: dict, match
             [InlineKeyboardButton("🔄 تعديل بيانات ميلادي", callback_data="reset_my_birthdata")],
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]
         ]
-        await telegram_app.bot.send_message(chat_id=chat_id, text=final_msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+
+        await telegram_app.bot.send_message(
+            chat_id=chat_id,
+            text=final_msg,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
         asyncio.create_task(async_db.update_active_heartbeat(chat_id))
     except Exception as e:
         logger.error(f"Error executing report dispatch for user={chat_id}: {e}", exc_info=True)
         fail_msg = intelligent_markdown_v2_escape("❌ عذراً، حدث خطأ داخلي أثناء معالجة بياناتك.")
         await telegram_app.bot.send_message(chat_id=chat_id, text=fail_msg, parse_mode=ParseMode.MARKDOWN_V2)
 
-# =====================================================================
+# ===================================================================== #
 # 6. مسارات الـ Conversations (المواليد، التوافق، الاختيارات)
-# =====================================================================
+# ===================================================================== #
 async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     user_id = query.from_user.id
@@ -435,19 +464,21 @@ async def synastry_trigger_workflow(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(err_profile, parse_mode=ParseMode.MARKDOWN_V2)
         return ConversationHandler.END
 
-    step1_msg = intelligent_markdown_v2_escape("💞 *قسم قياس التوافق والانسجام الفلكي (Synastry)* 💞\n\nأرسل *سنة ميلاد الطرف الثاني* بالأرقام (مثال: `2000`):")
+    step1_msg = intelligent_markdown_v2_escape("💞 *قسم قياس التوافق والانسجام الفلكي (Synastry)* 💞\n\nأرسل *سنة ميلاد الطرف الثاني* بالأرقام (مثال: 2000):")
     await query.edit_message_text(step1_msg, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_YEAR
 
 async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = int(update.message.text.strip())
-        if not (1900 <= val <= datetime.now().year + 1): raise ValueError()
+        if not (1900 <= val <= datetime.now().year + 1):
+            raise ValueError()
         context.user_data['p2_year'] = val
     except ValueError:
         err_yr = intelligent_markdown_v2_escape("⚠️ سنة غير صالحة. يرجى إدخال سنة ميلاد حقيقية بالأرقام:")
         await update.message.reply_text(err_yr, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_YEAR
+
     next_m = intelligent_markdown_v2_escape("ممتاز! الآن أرسل *شهر ميلاد الطرف الثاني* (من 1 إلى 12):")
     await update.message.reply_text(next_m, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_MONTH
@@ -455,12 +486,14 @@ async def p2_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = int(update.message.text.strip())
-        if not (1 <= val <= 12): raise ValueError()
+        if not (1 <= val <= 12):
+            raise ValueError()
         context.user_data['p2_month'] = val
     except ValueError:
         err_m = intelligent_markdown_v2_escape("⚠️ شهر غير صالح. يرجى إدخال رقم من 1 إلى 12:")
         await update.message.reply_text(err_m, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_MONTH
+
     next_d = intelligent_markdown_v2_escape("🗓 أرسل الآن *يوم ميلاد الطرف الثاني* برقم من (1 إلى 31):")
     await update.message.reply_text(next_d, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_DAY
@@ -468,13 +501,18 @@ async def p2_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p2_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = int(update.message.text.strip())
-        if not (1 <= val <= 31): raise ValueError()
+        if not (1 <= val <= 31):
+            raise ValueError()
         context.user_data['p2_day'] = val
     except ValueError:
         err_d = intelligent_markdown_v2_escape("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم من 1 إلى 31:")
         await update.message.reply_text(err_d, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_DAY
-    keyboard = [[InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="p2_knows_true")], [InlineKeyboardButton("❌ لا، غير معروف", callback_data="p2_knows_false")]]
+
+    keyboard = [
+        [InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="p2_knows_true")],
+        [InlineKeyboardButton("❌ لا، غير معروف", callback_data="p2_knows_false")]
+    ]
     ask_t = intelligent_markdown_v2_escape("🕒 هل تعرف *وقت ولادة الطرف الثاني* بدقة؟")
     await update.message.reply_text(ask_t, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
     return P2_KNOWS_TIME
@@ -482,8 +520,9 @@ async def p2_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p2_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
+
     if query.data == "p2_knows_true":
-        ask_time = intelligent_markdown_v2_escape("🕓 أرسل وقت ولادة الطرف الثاني بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `21:15`:")
+        ask_time = intelligent_markdown_v2_escape("🕓 أرسل وقت ولادة الطرف الثاني بتنسيق 24 ساعة (ساعة:دقيقة) مثال: 21:15:")
         await query.edit_message_text(ask_time, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_TIME
     else:
@@ -496,12 +535,14 @@ async def p2_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         time_str = update.message.text.strip()
         hour, minute = map(int, time_str.split(':'))
-        if not (0 <= hour <= 23 and 0 <= minute <= 59): raise ValueError()
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError()
         context.user_data['p2_hour'], context.user_data['p2_minute'] = hour, minute
     except ValueError:
-        err_t = intelligent_markdown_v2_escape("⚠️ تنسيق غير صحيح، يرجى إرساله مجدداً مثل `14:30`:")
+        err_t = intelligent_markdown_v2_escape("⚠️ تنسيق غير صحيح، يرجى إرساله مجدداً مثل 14:30:")
         await update.message.reply_text(err_t, parse_mode=ParseMode.MARKDOWN_V2)
         return P2_TIME
+
     ask_loc = intelligent_markdown_v2_escape("📍 أرسل *اسم مدينة ميلاد الطرف الثاني* باللغة العربية أو الإنجليزية:")
     await update.message.reply_text(ask_loc, parse_mode=ParseMode.MARKDOWN_V2)
     return P2_LOCATION
@@ -509,29 +550,31 @@ async def p2_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p2_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_input = update.message.text.strip()
     user_id = update.message.from_user.id
-    
     matched_city, lat, lon, tz_resolved = local_geo.search_city(user_input)
-    
+
     p2_data = {
-        'year': context.user_data['p2_year'], 'month': context.user_data['p2_month'], 'day': context.user_data['p2_day'],
-        'hour': context.user_data['p2_hour'], 'minute': context.user_data['p2_minute'], 'timezone': tz_resolved
+        'year': context.user_data['p2_year'],
+        'month': context.user_data['p2_month'],
+        'day': context.user_data['p2_day'],
+        'hour': context.user_data['p2_hour'],
+        'minute': context.user_data['p2_minute'],
+        'timezone': tz_resolved
     }
-    
+
     saved_profile = await async_db.get_user_profile(user_id)
     chart1 = await get_or_compute_user_chart(user_id, saved_profile, engine)
-    
+
     dt_utc2 = convert_local_time_to_utc(p2_data, lat, lon)
     chart2 = await compute_chart_safe(engine, dt_utc2, lat, lon, user_id)
 
     res = SynastryEngine.calculate_compatibility(chart1, chart2)
-
     description_escaped = intelligent_markdown_v2_escape(res['description'])
     verdict_escaped = intelligent_markdown_v2_escape(res['verdict'])
 
     report_text = (
         f"💞 *تقرير توافق الأبراج والخرائط الفلكية (Synastry)* 💞\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📊 *نسبة التوافق الإجمالية:* ` {res['score']}% `\n"
+        f"📊 *نسبة التوافق الإجمالية:* `{res['score']}%`\n"
         f"الحالة الفلكية: {verdict_escaped}\n\n"
         f"💬 *التحليل الفلكي والمقارن للعلاقة:*\n"
         f"{description_escaped}\n\n"
@@ -560,32 +603,33 @@ async def electional_trigger_workflow(update: Update, context: ContextTypes.DEFA
 async def handle_electional_query_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_text = update.message.text.strip()
     user_id = update.message.from_user.id
-    
+
     saved_profile = await async_db.get_user_profile(user_id)
-    lat = saved_profile.get("lat", 33.3152) 
+    lat = saved_profile.get("lat", 33.3152)
     lon = saved_profile.get("lon", 44.3661)
-    
+
     report_text, _ = electional_engine.generate_detailed_report(user_text, lat, lon)
     report_escaped = intelligent_markdown_v2_escape(report_text)
-    
+
     back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_home")]])
     await update.message.reply_text(report_escaped, reply_markup=back_markup, parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
-# =====================================================================
-# 7. محرك الخيرة الرقمية مع ميكانيكية الـ Dynamic BLAKE2b Seed
-# =====================================================================
+# ===================================================================== #
+# 7. محرك الخيرة الرقمية
+# ===================================================================== #
 class KhiraEngine:
     def __init__(self, json_path: str = "khira_data.json"):
         self.json_path = json_path
         self.cooldowns = {}
-        self.cooldown_duration = 3600  
+        self.cooldown_duration = 3600
         self.khira_data = self.load_khira_json()
 
     def load_khira_json(self) -> Dict[str, List[Dict[str, Any]]]:
         try:
             if os.path.exists(self.json_path):
-                with open(self.json_path, "r", encoding="utf-8") as f: return json.load(f)
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
             return {"good": [], "medium": [], "bad": []}
         except Exception:
             return {"good": [], "medium": [], "bad": []}
@@ -594,31 +638,36 @@ class KhiraEngine:
         current_time = time.time()
         if user_id in self.cooldowns:
             time_passed = current_time - self.cooldowns[user_id]
-            if time_passed < self.cooldown_duration: return int((self.cooldown_duration - time_passed) // 60)
+            if time_passed < self.cooldown_duration:
+                return int((self.cooldown_duration - time_passed) // 60)
         return 0
 
     def get_seeded_khira(self, user_id: int, user_profile: dict) -> Dict[str, Any]:
         today_str = datetime.now().strftime("%Y-%m-%d")
         birth_str = f"{user_profile.get('year', 1990)}-{user_profile.get('month', 1)}-{user_profile.get('day', 1)}"
         seed_source = f"{user_id}_{birth_str}_{today_str}"
-        
         hash_digest = hashlib.blake2b(seed_source.encode('utf-8'), digest_size=8).hexdigest()
         seed_int = int(hash_digest, 16)
-        
+
         state = random.getstate()
         random.seed(seed_int)
-        
+
         categories = ["good", "medium", "bad"]
         weights = [0.50, 0.30, 0.20]
         chosen_category = random.choices(categories, weights=weights, k=1)[0]
         options_list = self.khira_data.get(chosen_category, [])
-        
+
         if not options_list:
             random.setstate(state)
-            return {"verse": "يرجى التوكل على الله والعمل بالخير.", "stars": "⭐⭐⭐⭐", "interpretation": "الأبواب ميسرة ومباركة.", "dua": "اللهم صل على محمد وآل محمد"}
-            
+            return {
+                "verse": "يرجى التوكل على الله والعمل بالخير.",
+                "stars": "⭐⭐⭐⭐",
+                "interpretation": "الأبواب ميسرة ومباركة.",
+                "dua": "اللهم صل على محمد وآل محمد"
+            }
+
         chosen_item = random.choice(options_list)
-        random.setstate(state) 
+        random.setstate(state)
         self.cooldowns[user_id] = time.time()
         return chosen_item
 
@@ -632,21 +681,19 @@ class KhiraEngine:
 
 khira_engine = KhiraEngine()
 
-# =====================================================================
-# 8. إدارة الـ Lifespan، تنظيف الذاكرة المخبئية وتنظيف الأقفال الخاملة
-# =====================================================================
+# ===================================================================== #
+# 8. إدارة الـ Lifespan وتنظيف الذاكرة المخبئية
+# ===================================================================== #
 async def cache_and_locks_garbage_collector(interval: int = 300):
     while True:
         try:
             await asyncio.sleep(interval)
             CHART_CACHE.expire()
-            
             initial_count = len(_fixed_key_locks)
             for k in list(_fixed_key_locks.keys()):
                 lock = _fixed_key_locks[k]
                 if not lock.locked():
                     _fixed_key_locks.pop(k, None)
-                    
             logger.info(f"🧹 [GC] Cache size: {len(CHART_CACHE)} | Cleared Locks: {initial_count - len(_fixed_key_locks)}")
             logger.info(f"📊 [METRICS LOG] Hits={METRICS['cache_hits']} Misses={METRICS['cache_misses']} Timeouts={METRICS['calculation_timeouts']}")
         except asyncio.CancelledError:
@@ -658,7 +705,6 @@ async def cache_and_locks_garbage_collector(interval: int = 300):
 async def lifespan(app: FastAPI):
     await async_db.connect()
     gc_task = asyncio.create_task(cache_and_locks_garbage_collector())
-    
     await telegram_app.initialize()
     if WEBHOOK_URL and "http" in WEBHOOK_URL:
         await telegram_app.bot.set_webhook(url=WEBHOOK_URL)
@@ -668,11 +714,9 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Initiating graceful shutdown sequence...")
     gc_task.cancel()
     await asyncio.gather(gc_task, return_exceptions=True)
-    
     chart_executor.shutdown(wait=True)
     drawing_executor.shutdown(wait=True)
     logger.info("✅ Tailored Variable ThreadPoolExecutors terminated.")
-    
     if async_db.pool:
         await async_db.pool.close()
     await telegram_app.stop()
@@ -700,9 +744,9 @@ async def export_internal_metrics():
         **METRICS
     }
 
-# =====================================================================
-# 9. إدارة لوحات الأزرار والـ Handlers الفرعية والقائمة الرئيسية
-# =====================================================================
+# ===================================================================== #
+# 9. القائمة الرئيسية وإدارة الأزرار
+# ===================================================================== #
 def get_start_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔮 قسم الأبراج والفلك", callback_data="go_astrology")],
@@ -716,14 +760,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 async def khira_start_from_menu(query: Any, context: ContextTypes.DEFAULT_TYPE):
-    welcome_khira = intelligent_markdown_v2_escape("✨ خدمة الخيرة والاستخارة الرقمية المحصنة بالبصمة الحسابية الموحدة ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة، ثم اضغط على الزر أدناه لبدء الخيرة.")
+    welcome_khira = intelligent_markdown_v2_escape("✨ خدمة الخيرة واستخارة البصمة الحسابية الموحدة ✨\n\nيرجى استحضار النية وقراءة سورة الفاتحة، ثم اضغط على الزر أدناه لبدء الخيرة.")
     await query.edit_message_text(welcome_khira, reply_markup=khira_engine.get_main_keyboard(), parse_mode=ParseMode.MARKDOWN_V2)
 
 async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     user_id = query.from_user.id
-    await query.answer() 
-    
+    await query.answer()
+
     saved_profile = await async_db.get_user_profile(user_id)
     if saved_profile:
         found_msg = intelligent_markdown_v2_escape("✨ تم العثور على بيانات ميلادك المسجلة سابقاً! جاري الاستخراج فوراً...")
@@ -731,7 +775,7 @@ async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAU
         context.user_data.update(saved_profile)
         await process_and_send_astrology_report(chat_id=user_id, user_data=saved_profile, matched_city=saved_profile.get('city', 'Baghdad'))
         return ConversationHandler.END
-    
+
     start_astro = intelligent_markdown_v2_escape("🔮 نظام التحليل الفلكي الشامل\n\nابدأ بإرسال سنة ميلادك بالأرقام (مثال: 1998):")
     await query.edit_message_text(start_astro, parse_mode=ParseMode.MARKDOWN_V2)
     return YEAR
@@ -739,12 +783,14 @@ async def astrology_trigger_workflow(update: Update, context: ContextTypes.DEFAU
 async def p_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = int(update.message.text.strip())
-        if not (1900 <= val <= datetime.now().year + 1): raise ValueError()
+        if not (1900 <= val <= datetime.now().year + 1):
+            raise ValueError()
         context.user_data['year'] = val
     except ValueError:
         err_yr = intelligent_markdown_v2_escape("⚠️ سنة غير صالحة. أرسل سنة حقيقية بالأرقام:")
         await update.message.reply_text(err_yr, parse_mode=ParseMode.MARKDOWN_V2)
         return YEAR
+
     next_m = intelligent_markdown_v2_escape("📆 ممتاز! الآن أرسل شهر ميلادك (رقم من 1 إلى 12):")
     await update.message.reply_text(next_m, parse_mode=ParseMode.MARKDOWN_V2)
     return MONTH
@@ -752,12 +798,14 @@ async def p_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = int(update.message.text.strip())
-        if not (1 <= val <= 12): raise ValueError()
+        if not (1 <= val <= 12):
+            raise ValueError()
         context.user_data['month'] = val
     except ValueError:
         err_m = intelligent_markdown_v2_escape("⚠️ شهر غير صالح. يرجى إدخال رقم شهر حقيقي بين 1 و 12:")
         await update.message.reply_text(err_m, parse_mode=ParseMode.MARKDOWN_V2)
         return MONTH
+
     next_d = intelligent_markdown_v2_escape("🗓 رائع! أرسل الآن يوم ميلادك برقم من (1 إلى 31):")
     await update.message.reply_text(next_d, parse_mode=ParseMode.MARKDOWN_V2)
     return DAY
@@ -765,13 +813,18 @@ async def p_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         val = int(update.message.text.strip())
-        if not (1 <= val <= 31): raise ValueError()
+        if not (1 <= val <= 31):
+            raise ValueError()
         context.user_data['day'] = val
     except ValueError:
         err_d = intelligent_markdown_v2_escape("⚠️ يوم غير صالح. يرجى إدخال رقم اليوم بشكل صحيح:")
         await update.message.reply_text(err_d, parse_mode=ParseMode.MARKDOWN_V2)
         return DAY
-    keyboard = [[InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="knows_true")], [InlineKeyboardButton("❌ لا، غير معروف", callback_data="knows_false")]]
+
+    keyboard = [
+        [InlineKeyboardButton("✅ نعم، أعرفه بدقة", callback_data="knows_true")],
+        [InlineKeyboardButton("❌ لا، غير معروف", callback_data="knows_false")]
+    ]
     ask_t = intelligent_markdown_v2_escape("🕒 هل تعرف وقت ولادتك الدقيق؟")
     await update.message.reply_text(ask_t, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
     return KNOWS_TIME
@@ -779,8 +832,9 @@ async def p_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def p_knows_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
+
     if query.data == "knows_true":
-        ask_t = intelligent_markdown_v2_escape("🕓 أرسل وقت الولادة بتنسيق 24 ساعة (ساعة:دقيقة) مثال: `18:45`:")
+        ask_t = intelligent_markdown_v2_escape("🕓 أرسل وقت الولادة بتنسيق 24 ساعة (ساعة:دقيقة) مثال: 18:45:")
         await query.edit_message_text(ask_t, parse_mode=ParseMode.MARKDOWN_V2)
         return TIME
     else:
@@ -793,12 +847,14 @@ async def p_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         time_str = update.message.text.strip()
         hour, minute = map(int, time_str.split(':'))
-        if not (0 <= hour <= 23 and 0 <= minute <= 59): raise ValueError()
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError()
         context.user_data['hour'], context.user_data['minute'] = hour, minute
     except ValueError:
-        err_t = intelligent_markdown_v2_escape("⚠️ تنسيق أو وقت خاطئ، يرجى إرساله مثل `14:30`:")
+        err_t = intelligent_markdown_v2_escape("⚠️ تنسيق أو وقت خاطئ، يرجى إرساله مثل 14:30:")
         await update.message.reply_text(err_t, parse_mode=ParseMode.MARKDOWN_V2)
         return TIME
+
     ask_loc = intelligent_markdown_v2_escape("📍 أرسل اسم مدينة ميلادك باللغة العربية أو الإنجليزية:")
     await update.message.reply_text(ask_loc, parse_mode=ParseMode.MARKDOWN_V2)
     return LOCATION
@@ -809,9 +865,15 @@ async def p_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     matched_city, lat, lon, tz_resolved = local_geo.search_city(user_input)
 
     profile_to_save = {
-        "year": context.user_data['year'], "month": context.user_data['month'], "day": context.user_data['day'],
-        "hour": context.user_data['hour'], "minute": context.user_data['minute'], 
-        "city": matched_city, "lat": lat, "lon": lon, "timezone": tz_resolved
+        "year": context.user_data['year'],
+        "month": context.user_data['month'],
+        "day": context.user_data['day'],
+        "hour": context.user_data['hour'],
+        "minute": context.user_data['minute'],
+        "city": matched_city,
+        "lat": lat,
+        "lon": lon,
+        "timezone": tz_resolved
     }
     context.user_data.update(profile_to_save)
     await async_db.save_user_profile(user_id, profile_to_save)
@@ -854,15 +916,34 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if remaining > 0:
             await query.answer(f"⚠️ انتظر {remaining} دقيقة أو تدبر في نتيجتك الحالية أولاً.", show_alert=True)
             return
-            
+
         chosen = khira_engine.get_seeded_khira(user_id, saved_profile)
-        result_text = f"🔮 *نتيجـة الخيـرة الخاصـة بك لهذا اليوم*\n━━━━━━━━━━━━━━━━━━━━\n\n📖 *الآية الشريفة:*\n__{intelligent_markdown_v2_escape(chosen.get('verse', ''))}__\n\n📊 *الحكم والدرجة:*\nدرجة التيسير: {intelligent_markdown_v2_escape(chosen.get('stars', ''))}\n\n💬 *التوجيه والتفسير:*\n{intelligent_markdown_v2_escape(chosen.get('interpretation', ''))}\n\n🤲 *الدعاء المستحب:*\n_{intelligent_markdown_v2_escape(chosen.get('dua', ''))}_\n\n━━━━━━━━━━━━━━━━━━━━"
+        verse_escaped = intelligent_markdown_v2_escape(chosen.get('verse', ''))
+        stars_escaped = intelligent_markdown_v2_escape(chosen.get('stars', ''))
+        interp_escaped = intelligent_markdown_v2_escape(chosen.get('interpretation', ''))
+        dua_escaped = intelligent_markdown_v2_escape(chosen.get('dua', ''))
+
+        result_text = (
+            f"🔮 *نتيجـة الخيـرة الخاصـة بك لهذا اليوم*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📖 *الآية الشريفة:*\n_{verse_escaped}_\n\n"
+            f"📊 *الحكم والدرجة:*\nدرجة التيسير: {stars_escaped}\n\n"
+            f"💬 *التوجيه والتفسير:*\n{interp_escaped}\n\n"
+            f"🤲 *الدعاء المستحب:*\n_{dua_escaped}_\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
+        )
         await query.edit_message_text(result_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     elif data == "khira_rules":
         await query.answer()
-        rules_text = "📜 *آداب وشروط عمل الخيرة:*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ *النية الصادقة والوضوء*\n2️⃣ *عدم التكرار في نفس الأمر في ذات اليوم*\n3️⃣ *الرضا بالنتيجة وتسليم الأمر لله.*"
+        rules_text = (
+            f"📜 *آداب وشروط عمل الخيرة:*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"1️⃣ {intelligent_markdown_v2_escape('النية الصادقة والوضوء')}\n"
+            f"2️⃣ {intelligent_markdown_v2_escape('عدم التكرار في نفس الأمر في ذات اليوم')}\n"
+            f"3️⃣ {intelligent_markdown_v2_escape('الرضا بالنتيجة وتسليم الأمر لله.')}"
+        )
         await query.edit_message_text(rules_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ العودة لقائمة الخيرة", callback_data="khira_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
         return
 
@@ -873,6 +954,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     chart_data = await get_or_compute_user_chart(user_id, saved_profile, engine)
+
     astrology_back_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ الأبراج وحظك اليوم", callback_data="menu_horoscope_daily")],
         [InlineKeyboardButton("📜 قراءة برجك والتحليل الكامل", callback_data="menu_read_all")],
@@ -906,18 +988,24 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             full_report = intelligent_markdown_v2_escape(full_report)
             asc_sign = getattr(chart_data, 'ascendant', 'Aries')
             complete_analysis = f"🪐 *التقرير الفلكي الشامل والكامل لخريطتك* 🪐\n━━━━━━━━━━━━━━━━━━━━\n• *البرج الصاعد (الطالع):* {intelligent_markdown_v2_escape(asc_sign)}\n━━━━━━━━━━━━━━━━━━━━\n\n{full_report}"
-            
+
             if len(complete_analysis) > 4000:
                 parts = [complete_analysis[i:i+4000] for i in range(0, len(complete_analysis), 4000)]
                 for i, part in enumerate(parts):
-                    if i == len(parts) - 1: await query.message.reply_text(part, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
-                    else: await telegram_app.bot.send_message(chat_id=user_id, text=part, parse_mode=ParseMode.MARKDOWN_V2)
+                    if i == len(parts) - 1:
+                        await query.message.reply_text(part, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                    else:
+                        await telegram_app.bot.send_message(chat_id=user_id, text=part, parse_mode=ParseMode.MARKDOWN_V2)
             else:
                 await query.edit_message_text(complete_analysis, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
 
         elif data == "menu_generate_image":
             await query.answer()
             try:
+                class PlanetAdapter:
+                    def __init__(self, d):
+                        self.longitude = getattr(d, 'longitude', getattr(d, 'abs_degree', 0.0))
+
                 class FlexibleChartAdapter:
                     def __init__(self, raw_chart):
                         self.ascendant = getattr(raw_chart, 'ascendant', 'Aries')
@@ -927,14 +1015,12 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         self.planets = {}
                         raw_planets = getattr(raw_chart, 'planets', {})
                         for p_name, p_data in raw_planets.items():
-                            class PlanetAdapter:
-                                def __init__(self, d): self.longitude = getattr(d, 'longitude', getattr(d, 'abs_degree', 0.0))
                             self.planets[p_name] = PlanetAdapter(p_data)
                         self.aspects = getattr(raw_chart, 'aspects', [])
 
                 adapted_chart = FlexibleChartAdapter(chart_data)
                 img_bytes_data = await draw_chart_safe(drawer, adapted_chart, user_id)
-                
+
                 if not img_bytes_data:
                     err_draw = intelligent_markdown_v2_escape("⚠️ المحرك لم يقم بتوليد مخرجات رسومية صالحة حالياً.")
                     await query.message.reply_text(err_draw, reply_markup=astrology_back_markup, parse_mode=ParseMode.MARKDOWN_V2)
@@ -942,7 +1028,12 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
                 img_buffer = io.BytesIO(img_bytes_data)
                 img_buffer.name = "natal_chart.png"
-                await telegram_app.bot.send_photo(chat_id=user_id, photo=img_buffer, caption="🪐 *عجلة خريطتك الفلكية الاحترافية كاملة الدلالات (Natal Wheel)*", reply_markup=astrology_back_markup)
+                await telegram_app.bot.send_photo(
+                    chat_id=user_id,
+                    photo=img_buffer,
+                    caption="🪐 *عجلة خريطتك الفلكية الاحترافية كاملة الدلالات (Natal Wheel)*",
+                    reply_markup=astrology_back_markup
+                )
             except Exception as draw_err:
                 logger.error(f"Error drawing chart for user={draw_err}")
                 err_draw_fail = intelligent_markdown_v2_escape("⚠️ تعذر توليد الصورة حالياً، يرجى مراجعة التقرير النصي المعروض.")
@@ -955,9 +1046,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(cancel_msg, parse_mode=ParseMode.MARKDOWN_V2)
     return ConversationHandler.END
 
-# =====================================================================
-# 10. ربط الـ Handlers وبناء الـ Conversation بالكامل
-# =====================================================================
+# ===================================================================== #
+# 10. ربط الـ Handlers وبناء الـ Conversation
+# ===================================================================== #
 conv_handler = ConversationHandler(
     entry_points=[
         CallbackQueryHandler(astrology_trigger_workflow, pattern="^go_astrology$"),
@@ -971,14 +1062,12 @@ conv_handler = ConversationHandler(
         KNOWS_TIME: [CallbackQueryHandler(p_knows_time)],
         TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_time)],
         LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_location)],
-        
         P2_YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_year)],
         P2_MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_month)],
         P2_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_day)],
         P2_KNOWS_TIME: [CallbackQueryHandler(p2_knows_time)],
         P2_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_time)],
         P2_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, p2_location)],
-        
         ELECTIONAL_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_electional_query_analysis)]
     },
     fallbacks=[CommandHandler('cancel', cancel)],
@@ -990,10 +1079,8 @@ telegram_app.add_handler(CommandHandler('start', start))
 telegram_app.add_handler(conv_handler)
 telegram_app.add_handler(CallbackQueryHandler(handle_menu_clicks, pattern="^(?!(go_astrology|start_synastry_flow|start_electional_flow)$).*"))
 
-# =====================================================================
-# 11. تشغيل خادم Uvicorn باستمرار لتنفيذ التطبيق (FastAPI Webhook Server)
-# =====================================================================
+# ===================================================================== #
+# 11. تشغيل التطبيق (Polling / Webhook Server)
+# ===================================================================== #
 if __name__ == '__main__':
     telegram_app.run_polling()
-    
-    
