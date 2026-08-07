@@ -1,14 +1,17 @@
 import math
 import io
+import logging
 from typing import Dict, Any, List
 from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
 
 class AstrologyChartDrawer:
     def __init__(self, size: int = 900):
         self.size = size
         self.cx = size / 2
         self.cy = size / 2
-        
+
         # نظام الحلقات الشامل
         self.r_outer = 420       
         self.r_zodiac_out = 410  
@@ -37,6 +40,20 @@ class AstrologyChartDrawer:
             "Opposition": (148, 0, 211)       
         }
 
+        # الأسماء المحتملة لحقلي الكوكبين داخل كائن Aspect (تختلف حسب نموذج chart.py المستخدم)
+        # يُجرَّب كل زوج بالترتيب حتى يجد أول تطابق موجود فعليًا في الكائن
+        self._aspect_field_candidates = [
+            ("p1", "p2"),
+            ("planet1", "planet2"),
+            ("planet_1", "planet_2"),
+            ("body1", "body2"),
+            ("first", "second"),
+            ("planet_a", "planet_b"),
+            ("a", "b"),
+        ]
+
+        self._aspect_field_warned = False
+
     def _to_radians(self, degrees: float) -> float:
         return math.radians(degrees)
 
@@ -53,6 +70,32 @@ class AstrologyChartDrawer:
             degrees += 1
             minutes = 0
         return f"{degrees}°{minutes:02d}'"
+
+    def _extract_aspect_planets(self, aspect) -> tuple:
+        """
+        يستخرج اسمي الكوكبين من كائن Aspect بأمان بغض النظر عن التسمية الفعلية للحقلين
+        (قد تكون p1/p2 أو planet1/planet2 أو body1/body2 إلخ حسب نموذج Pydantic المستخدم في chart.py).
+        يعيد (None, None) إذا لم يُعثر على أي تطابق، بدل رمي AttributeError وإيقاف الرسم بالكامل.
+        """
+        for name1, name2 in self._aspect_field_candidates:
+            v1 = getattr(aspect, name1, None)
+            v2 = getattr(aspect, name2, None)
+            if v1 is not None and v2 is not None:
+                return v1, v2
+
+        if not self._aspect_field_warned:
+            try:
+                actual_fields = list(aspect.model_dump().keys()) if hasattr(aspect, "model_dump") else list(vars(aspect).keys())
+            except Exception:
+                actual_fields = "غير معروف"
+            logger.warning(
+                f"⚠️ [Aspect Fields Mismatch] لم يتم التعرف على حقلي الكوكبين في كائن Aspect. "
+                f"الحقول الفعلية الموجودة: {actual_fields}. "
+                f"أضف الاسم الصحيح إلى self._aspect_field_candidates في drawer.py."
+            )
+            self._aspect_field_warned = True
+
+        return None, None
 
     def _resolve_collisions(self, planets_angles: List[Dict[str, Any]], min_dist: float = 8.5) -> List[Dict[str, Any]]:
         sorted_planets = sorted(planets_angles, key=lambda x: x['orig_angle'])
@@ -148,9 +191,13 @@ class AstrologyChartDrawer:
         if hasattr(chart_data, 'aspects') and chart_data.aspects:
             planets_dict = chart_data.planets if isinstance(chart_data.planets, dict) else {}
             for aspect in chart_data.aspects:
-                if aspect.p1 in planets_dict and aspect.p2 in planets_dict:
-                    p1_deg = getattr(planets_dict[aspect.p1], 'longitude', 0.0)
-                    p2_deg = getattr(planets_dict[aspect.p2], 'longitude', 0.0)
+                p1_name, p2_name = self._extract_aspect_planets(aspect)
+                if p1_name is None or p2_name is None:
+                    continue  # تجاوز هذا الاتصال بدل إيقاف الرسم بالكامل
+
+                if p1_name in planets_dict and p2_name in planets_dict:
+                    p1_deg = getattr(planets_dict[p1_name], 'longitude', 0.0)
+                    p2_deg = getattr(planets_dict[p2_name], 'longitude', 0.0)
                     
                     a1 = p1_deg - asc_deg
                     a2 = p2_deg - asc_deg
